@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+
+# SQLModel SQLite DB
+*.db
+
+# Environments
+env/
+venv/
+.venv/
+
+# Secrets
+.env
+.env.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Logs
+*.log
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MacOS
+.DS_Store
+
