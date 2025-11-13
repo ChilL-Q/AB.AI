@@ -52,16 +52,17 @@ The assistant replies:
 
 ## Tech Stack
 
-Backend — FastAPI (Python)
-Database — SQLModel (SQLite / PostgreSQL)
-AI Engine — OpenAI Chat Completions API
-Messaging — Telegram Bot API (Webhook)
-Infrastructure — uvicorn, ngrok / custom domain
-Optional — Docker
+- Backend — FastAPI (Python)
+- Database — SQLModel (SQLite / PostgreSQL)
+- AI Engine — OpenAI Chat Completions API
+- Messaging — Telegram Bot API (Webhook)
+- Infrastructure — uvicorn, ngrok / custom domain
+- Optional — Docker
 
 
 ## Project Structure
 
+```bash
 app/
   config.py
   db.py
@@ -78,8 +79,9 @@ app/
 
 .env.example
 README.md
+```
 
-
+```env
 ## Environment Variables
 
 OPENAI_API_KEY=your_openai_key_here
@@ -88,7 +90,7 @@ DATABASE_URL=sqlite:///./abai.db
 AI_MODEL=gpt-5.1-mini
 NGROK_PUBLIC_URL=https://your-ngrok-or-domain
 ENV=development
-
+```
 
 ## Local Development
 
