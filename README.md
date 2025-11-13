@@ -112,13 +112,11 @@ http://localhost:8000/docs
 
 ## Telegram Bot Setup
 
-Create a bot via @BotFather
-Add the token to .env
-Set the webhook:
-https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://YOUR_DOMAIN/telegram/webhook
+- Create a bot via @BotFather
+- Add the token to .env
+- Set the webhook: https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://YOUR_DOMAIN/telegram/webhook
 
-Telegram will send updates to:
-POST /telegram/webhook
+- Telegram will send updates to: POST /telegram/webhook
 
 
 ## Roadmap
