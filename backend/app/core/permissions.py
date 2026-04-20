@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Any
 
 from app.core.exceptions import ForbiddenError
 
@@ -22,7 +23,7 @@ _ROLE_RANK: dict[Role, int] = {
 def require_role(*roles: Role):
     """FastAPI dependency factory — raises 403 if current user's role is not in allowed list."""
 
-    def _check(current_user: "Any") -> None:  # noqa: F821
+    def _check(current_user: Any) -> None:
         if current_user.role not in roles:
             raise ForbiddenError(
                 f"Role '{current_user.role}' is not allowed. Required: {[r.value for r in roles]}"

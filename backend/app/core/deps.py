@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import Depends
@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import UnauthorizedError
 from app.core.security import decode_token
 from app.db.session import get_session
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
 
 bearer_scheme = HTTPBearer()
 
@@ -42,4 +45,4 @@ async def get_current_user(
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
-CurrentUserDep = Annotated["User", Depends(get_current_user)]  # noqa: F821
+CurrentUserDep = Annotated["User", Depends(get_current_user)]
