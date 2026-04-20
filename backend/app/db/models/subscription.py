@@ -23,8 +23,12 @@ class Subscription(Base, UUIDPrimaryKey, TimestampMixin):
     status: Mapped[str] = mapped_column(SubscriptionStatus, default="trialing")
 
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     payment_provider: Mapped[str | None] = mapped_column(PaymentProvider, nullable=True)
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

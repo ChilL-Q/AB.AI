@@ -20,8 +20,8 @@ async def get_current_user_id(
         raise UnauthorizedError("Invalid or expired token")
     try:
         return UUID(payload["sub"])
-    except (KeyError, ValueError):
-        raise UnauthorizedError("Invalid token payload")
+    except (KeyError, ValueError) as err:
+        raise UnauthorizedError("Invalid token payload") from err
 
 
 async def get_current_user(
@@ -41,6 +41,5 @@ async def get_current_user(
     return user
 
 
-# Convenience type aliases
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 CurrentUserDep = Annotated["User", Depends(get_current_user)]  # noqa: F821

@@ -24,7 +24,9 @@ class User(Base, UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin):
     )
     role: Mapped[str] = mapped_column(UserRole, default="mechanic", nullable=False)
 
-    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

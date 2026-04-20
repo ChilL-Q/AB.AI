@@ -35,7 +35,12 @@ async def get_clients(
     data = [ClientOut.model_validate(c) for c in rows]
     return PaginatedResponse(
         data=data,
-        meta=PaginationMeta(total=total or 0, page=page, limit=limit, has_next=(page * limit) < (total or 0)),
+        meta=PaginationMeta(
+            total=total or 0,
+            page=page,
+            limit=limit,
+            has_next=(page * limit) < (total or 0),
+        ),
     )
 
 
@@ -44,7 +49,11 @@ async def create_client(
 ) -> ClientOut:
     phone = normalize_phone(data.phone)
     existing = await session.scalar(
-        select(Client).where(Client.team_id == team_id, Client.phone == phone, Client.deleted_at.is_(None))
+        select(Client).where(
+            Client.team_id == team_id,
+            Client.phone == phone,
+            Client.deleted_at.is_(None),
+        )
     )
     if existing:
         raise ConflictError("Client with this phone already exists")
@@ -55,7 +64,9 @@ async def create_client(
     return ClientOut.model_validate(client)
 
 
-async def get_client(team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession) -> ClientOut:
+async def get_client(
+    team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession
+) -> ClientOut:
     client = await session.scalar(
         select(Client).where(
             Client.id == client_id, Client.team_id == team_id, Client.deleted_at.is_(None)
@@ -83,7 +94,9 @@ async def update_client(
     return ClientOut.model_validate(client)
 
 
-async def delete_client(team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession) -> None:
+async def delete_client(
+    team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession
+) -> None:
     from datetime import UTC, datetime
 
     client = await session.scalar(
