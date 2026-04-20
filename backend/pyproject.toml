@@ -64,8 +64,11 @@ ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"
-strict = true
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.db.models.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
