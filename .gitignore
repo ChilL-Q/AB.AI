@@ -3,34 +3,53 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+*.egg
+
+# Env
+.env
+.env.*
+!.env.example
+
+# DB
+*.db
 *.sqlite3
 
-# SQLModel SQLite DB
-*.db
-
-# Environments
-env/
-venv/
-.venv/
-
-# Secrets
-.env
-.env.local
-*.env
-
-# IDE
-.vscode/
-.idea/
-*.code-workspace
+# Node
+node_modules/
+.next/
+.expo/
+dist/
+build/
+*.tsbuildinfo
 
 # Logs
 *.log
+logs/
 
-# Pytest / coverage
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Testing
 .pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+.mypy_cache/
 
-# MacOS
-.DS_Store
-
+# Mobile
+mobile/.expo/
+mobile/android/
+mobile/ios/
