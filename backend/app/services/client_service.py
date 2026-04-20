@@ -44,9 +44,7 @@ async def get_clients(
     )
 
 
-async def create_client(
-    team_id: uuid.UUID, data: ClientCreate, session: AsyncSession
-) -> ClientOut:
+async def create_client(team_id: uuid.UUID, data: ClientCreate, session: AsyncSession) -> ClientOut:
     phone = normalize_phone(data.phone)
     existing = await session.scalar(
         select(Client).where(
@@ -64,9 +62,7 @@ async def create_client(
     return ClientOut.model_validate(client)
 
 
-async def get_client(
-    team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession
-) -> ClientOut:
+async def get_client(team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession) -> ClientOut:
     client = await session.scalar(
         select(Client).where(
             Client.id == client_id, Client.team_id == team_id, Client.deleted_at.is_(None)
@@ -94,9 +90,7 @@ async def update_client(
     return ClientOut.model_validate(client)
 
 
-async def delete_client(
-    team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession
-) -> None:
+async def delete_client(team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession) -> None:
     from datetime import UTC, datetime
 
     client = await session.scalar(
