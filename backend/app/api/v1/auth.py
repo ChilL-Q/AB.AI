@@ -1,7 +1,4 @@
-from typing import Annotated
-
-from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter
 
 from app.core.deps import SessionDep
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
