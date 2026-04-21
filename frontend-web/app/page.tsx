@@ -1,8 +1,13 @@
-export default function HomePage() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-24">
-      <h1 className="text-4xl font-bold">AB AI</h1>
-      <p className="mt-4 text-lg text-gray-600">Платформа для автосервисов</p>
-    </main>
-  );
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { auth } from "@/lib/auth";
+
+export default function Home() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace(auth.isAuthed() ? "/dashboard" : "/login");
+  }, [router]);
+  return null;
 }
