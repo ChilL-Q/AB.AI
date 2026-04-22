@@ -53,3 +53,4 @@ htmlcov/
 mobile/.expo/
 mobile/android/
 mobile/ios/
+.claude/

@@ -44,15 +44,15 @@ export default function RegisterPage() {
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Имя</Label>
-            <Input id="name" value={full_name} onChange={(e) => setFullName(e.target.value)} required />
+            <Input id="name" autoComplete="name" value={full_name} onChange={(e) => setFullName(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Пароль</Label>
-            <Input id="password" type="password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <Input id="password" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={loading}>
