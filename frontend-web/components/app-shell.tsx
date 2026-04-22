@@ -68,10 +68,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: me } = useMe();
+  const isOnboarding = pathname.startsWith("/onboarding");
 
   useEffect(() => {
     if (!auth.isAuthed()) router.replace("/login");
   }, [router]);
+
+  useEffect(() => {
+    if (me && !me.team_id && !isOnboarding) router.replace("/onboarding");
+  }, [me, isOnboarding, router]);
+
+  if (isOnboarding) {
+    return (
+      <div className="min-h-screen bg-muted/20">
+        <header className="h-16 border-b bg-card flex items-center px-6">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+              <Car className="h-5 w-5" />
+            </div>
+            <span className="font-semibold">AB AI</span>
+          </div>
+          <Button variant="ghost" size="sm" className="ml-auto" onClick={() => { auth.clear(); router.push("/login"); }}>
+            <LogOut className="h-4 w-4 mr-2" />Выйти
+          </Button>
+        </header>
+        <main className="p-6">{children}</main>
+      </div>
+    );
+  }
 
   const logout = () => {
     auth.clear();

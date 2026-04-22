@@ -12,6 +12,16 @@ export interface User {
   created_at: string;
 }
 
+export interface Team {
+  id: string;
+  name: string;
+  slug: string;
+  timezone: string;
+  locale: string;
+  onboarding_completed: boolean;
+  created_at: string;
+}
+
 export interface Client {
   id: string;
   team_id: string;
