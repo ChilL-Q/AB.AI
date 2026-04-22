@@ -24,7 +24,7 @@ const TIMEZONES = [
 export default function OnboardingPage() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { data: me, isLoading } = useMe();
+  const { data: me, isLoading, error: meError } = useMe();
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -70,13 +70,25 @@ export default function OnboardingPage() {
     mutation.mutate();
   };
 
-  if (isLoading || !me || me.team_id) {
+  if (isLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
+
+  if (meError || !me) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <p className="text-sm text-destructive">
+          Не удалось загрузить профиль. Проверьте, что бэкенд запущен на :8000.
+        </p>
+      </div>
+    );
+  }
+
+  if (me.team_id) return null;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pt-6">
@@ -122,7 +134,7 @@ export default function OnboardingPage() {
                     setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
                   }}
                   required
-                  pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+                  pattern="^[a-z0-9][-a-z0-9]*[a-z0-9]$"
                 />
               </div>
               <p className="text-xs text-muted-foreground">Используется в URL-адресах и интеграциях</p>
