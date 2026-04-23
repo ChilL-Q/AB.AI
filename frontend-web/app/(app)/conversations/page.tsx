@@ -27,8 +27,9 @@ import { formatTimeAgo } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { initialsOf } from "@/hooks/use-me";
+import { initialsOf, useMe } from "@/hooks/use-me";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useWebSocket, type RealtimeEvent as WsEvent } from "@/hooks/use-websocket";
 import { cn } from "@/lib/utils";
 import type {
   Conversation,
@@ -63,11 +64,19 @@ function MessageStatusIcon({ status }: { status: Message["status"] }) {
 
 export default function ConversationsPage() {
   const qc = useQueryClient();
+  const meQ = useMe();
+  const myUserId = meQ.data?.id;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
+  // Map of conversation_id → { userId, expiresAt } for typing indicators.
+  const [typingByConv, setTypingByConv] = useState<Record<string, { userId: string; expiresAt: number }>>({});
+  // Set of user_ids currently online on this team (best-effort presence).
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
 
   const conversationsQ = useQuery({
     queryKey: ["conversations", { search: debouncedSearch }],
@@ -111,6 +120,127 @@ export default function ConversationsPage() {
     getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.next_cursor : undefined),
     enabled: !!selectedId,
   });
+
+  // Realtime: append live inbound messages to the open thread and refresh
+  // sidebar badges for all others. We mutate the infinite-query cache directly
+  // for the open thread to avoid a flicker from refetch.
+  const onRealtimeEvent = useCallback(
+    (ev: WsEvent) => {
+      if (ev.type === "message.new") {
+        const convId = ev.conversation_id ?? null;
+        const msg = ev.payload as unknown as Message | undefined;
+        if (!convId || !msg) return;
+        // Always refresh the sidebar (preview + unread + ordering).
+        qc.invalidateQueries({ queryKey: ["conversations"] });
+        if (convId === selectedIdRef.current) {
+          // Append to the newest page (first in the `pages` array by cursor
+          // semantics) if not already present.
+          qc.setQueryData<{ pages: MessagePage[]; pageParams: unknown[] }>(
+            ["conversation-messages", convId],
+            (prev) => {
+              if (!prev || prev.pages.length === 0) return prev;
+              const [head, ...rest] = prev.pages;
+              if (head.data.some((m) => m.id === msg.id)) return prev;
+              return {
+                ...prev,
+                pages: [{ ...head, data: [...head.data, msg] }, ...rest],
+              };
+            },
+          );
+          // Opportunistically mark as read since the thread is open.
+          if (msg.direction === "inbound") {
+            api.post(`/conversations/${convId}/read`).catch(() => undefined);
+          }
+        }
+      } else if (ev.type === "message.read") {
+        qc.invalidateQueries({ queryKey: ["conversations"] });
+      } else if (ev.type === "typing.start" && ev.conversation_id && ev.user_id) {
+        const convId = ev.conversation_id;
+        const userId = ev.user_id;
+        setTypingByConv((prev) => ({
+          ...prev,
+          [convId]: { userId, expiresAt: Date.now() + 4000 },
+        }));
+      } else if (ev.type === "typing.stop" && ev.conversation_id) {
+        const convId = ev.conversation_id;
+        setTypingByConv((prev) => {
+          const next = { ...prev };
+          delete next[convId];
+          return next;
+        });
+      } else if (ev.type === "presence.online" && ev.user_id) {
+        const uid = ev.user_id;
+        setOnlineUsers((prev) => {
+          if (prev.has(uid)) return prev;
+          const next = new Set(prev);
+          next.add(uid);
+          return next;
+        });
+      } else if (ev.type === "presence.offline" && ev.user_id) {
+        const uid = ev.user_id;
+        setOnlineUsers((prev) => {
+          if (!prev.has(uid)) return prev;
+          const next = new Set(prev);
+          next.delete(uid);
+          return next;
+        });
+      }
+    },
+    [qc],
+  );
+
+  const { status: wsStatus, sendTyping } = useWebSocket({
+    onEvent: onRealtimeEvent,
+    enabled: !!myUserId,
+  });
+
+  // Purge stale typing entries (server sends typing.stop, but expire anyway
+  // in case a sender drops off without signaling).
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTypingByConv((prev) => {
+        const now = Date.now();
+        let changed = false;
+        const next: typeof prev = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (v.expiresAt > now) next[k] = v;
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Debounced typing broadcast: emit typing.start while the user types, then
+  // typing.stop after 2s of inactivity (or on send / thread switch).
+  const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+  const onDraftChange = (value: string) => {
+    setDraft(value);
+    if (!selectedId) return;
+    if (!isTypingRef.current && value.trim().length > 0) {
+      isTypingRef.current = true;
+      sendTyping(selectedId, "start");
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(() => {
+      if (isTypingRef.current && selectedId) {
+        sendTyping(selectedId, "stop");
+        isTypingRef.current = false;
+      }
+    }, 2000);
+  };
+  // Stop typing on thread switch.
+  useEffect(() => {
+    return () => {
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      if (isTypingRef.current && selectedIdRef.current) {
+        sendTyping(selectedIdRef.current, "stop");
+        isTypingRef.current = false;
+      }
+    };
+  }, [selectedId, sendTyping]);
 
   // Pages come in reverse order (newest page first, then older pages), each
   // page is oldest→newest internally. To render chronologically we reverse the
@@ -234,8 +364,18 @@ export default function ConversationsPage() {
     e.preventDefault();
     const text = draft.trim();
     if (!text || !selectedId || sendMutation.isPending) return;
+    if (isTypingRef.current) {
+      sendTyping(selectedId, "stop");
+      isTypingRef.current = false;
+    }
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
     sendMutation.mutate(text);
   };
+
+  const typingInSelected =
+    selectedId && typingByConv[selectedId] && typingByConv[selectedId].userId !== myUserId
+      ? typingByConv[selectedId]
+      : null;
 
   return (
     <div className="h-[calc(100vh-6rem)] -mx-6 -my-6 flex border-t">
@@ -349,7 +489,36 @@ export default function ConversationsPage() {
                   </span>
                   <span>·</span>
                   <span className="capitalize">{selected.status}</span>
+                  {typingInSelected && (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1 text-primary">
+                        <span className="inline-flex gap-0.5">
+                          <span className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:-0.3s]" />
+                          <span className="h-1 w-1 rounded-full bg-current animate-bounce [animation-delay:-0.15s]" />
+                          <span className="h-1 w-1 rounded-full bg-current animate-bounce" />
+                        </span>
+                        печатает
+                      </span>
+                    </>
+                  )}
                 </div>
+              </div>
+              <div
+                className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground"
+                title={`WebSocket: ${wsStatus} · Операторов в сети: ${onlineUsers.size}`}
+              >
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    wsStatus === "open"
+                      ? "bg-emerald-500"
+                      : wsStatus === "connecting"
+                        ? "bg-amber-500 animate-pulse"
+                        : "bg-muted-foreground/40",
+                  )}
+                />
+                {wsStatus === "open" ? "онлайн" : wsStatus === "connecting" ? "подключение" : "офлайн"}
               </div>
             </header>
 
@@ -437,7 +606,7 @@ export default function ConversationsPage() {
                 <Input
                   placeholder="Написать сообщение..."
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => onDraftChange(e.target.value)}
                   disabled={sendMutation.isPending}
                   className="flex-1"
                 />

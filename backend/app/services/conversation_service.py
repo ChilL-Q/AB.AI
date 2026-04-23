@@ -9,6 +9,8 @@ from app.core.exceptions import NotFoundError
 from app.db.models.client import Client
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message
+from app.realtime.bus import publish_nowait
+from app.realtime.events import RealtimeEvent
 from app.schemas.common import PaginatedResponse, PaginationMeta
 from app.schemas.conversation import (
     ConversationCreate,
@@ -303,7 +305,18 @@ async def send_message(
     session.add(msg)
     conv.last_message_at = now
     await session.flush()
-    return MessageOut.model_validate(msg)
+    out = MessageOut.model_validate(msg)
+    publish_nowait(
+        RealtimeEvent(
+            type="message.new",
+            team_id=team_id,
+            conversation_id=conv.id,
+            user_id=user_id,
+            payload=out.model_dump(mode="json"),
+            ts=now,
+        )
+    )
+    return out
 
 
 async def mark_conversation_read(
@@ -322,4 +335,13 @@ async def mark_conversation_read(
     if latest_inbound_id and conv.last_read_message_id != latest_inbound_id:
         conv.last_read_message_id = latest_inbound_id
         await session.flush()
+        publish_nowait(
+            RealtimeEvent(
+                type="message.read",
+                team_id=team_id,
+                conversation_id=conv.id,
+                payload={"last_read_message_id": str(latest_inbound_id)},
+                ts=datetime.now(UTC),
+            )
+        )
     return _to_out(conv, unread_count=0)

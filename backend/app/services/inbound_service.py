@@ -18,6 +18,9 @@ from app.db.models.client import Client
 from app.db.models.conversation import Conversation
 from app.db.models.message import Message
 from app.db.models.team import Team
+from app.realtime.bus import publish_nowait
+from app.realtime.events import RealtimeEvent
+from app.schemas.conversation import MessageOut
 
 
 async def record_inbound_message(
@@ -90,6 +93,17 @@ async def record_inbound_message(
     session.add(msg)
     conv.last_message_at = now
     await session.flush()
+
+    # Fan out to connected operators so open threads update live.
+    publish_nowait(
+        RealtimeEvent(
+            type="message.new",
+            team_id=team.id,
+            conversation_id=conv.id,
+            payload=MessageOut.model_validate(msg).model_dump(mode="json"),
+            ts=now,
+        )
+    )
     return msg
 
 
