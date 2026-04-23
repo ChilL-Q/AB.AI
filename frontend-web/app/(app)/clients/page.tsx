@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Plus, Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
@@ -25,6 +25,7 @@ import type { Client, PaginatedResponse } from "@/types";
 const LIMIT = 25;
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
@@ -98,7 +99,7 @@ export default function ClientsPage() {
             </div>
           ) : (
             <>
-              <Table>
+              <Table aria-label="Список клиентов">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Имя</TableHead>
@@ -112,12 +113,21 @@ export default function ClientsPage() {
                 </TableHeader>
                 <TableBody>
                   {clients.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-medium">
-                        <Link href={`/clients/${c.id}`} className="block hover:underline">
-                          {c.full_name}
-                        </Link>
-                      </TableCell>
+                    <TableRow
+                      key={c.id}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`Открыть ${c.full_name}`}
+                      className="cursor-pointer focus:bg-muted/50 focus:outline-none"
+                      onClick={() => router.push(`/clients/${c.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          router.push(`/clients/${c.id}`);
+                        }
+                      }}
+                    >
+                      <TableCell className="font-medium">{c.full_name}</TableCell>
                       <TableCell className="text-muted-foreground tabular-nums">
                         {formatPhone(c.phone)}
                       </TableCell>
@@ -176,7 +186,11 @@ export default function ClientsPage() {
         </CardContent>
       </Card>
 
-      <ClientFormDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <ClientFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onCreated={() => setPage(1)}
+      />
     </div>
   );
 }
