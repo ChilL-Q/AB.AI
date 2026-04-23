@@ -1,9 +1,10 @@
 """
 Test fixtures. Uses the Postgres configured via DATABASE_URL (in CI) or
-the local default (for local runs). The schema is created fresh per test
-session via SQLAlchemy metadata — alembic migrations are tested
-separately. Each test runs inside a transaction that is rolled back,
-keeping fixtures independent.
+the local default (for local runs). The engine is recreated per test to
+avoid the "attached to a different loop" error pytest-asyncio raises
+when a session-scoped async resource is reused across function-scoped
+loops. Each test runs inside a transaction that is rolled back, keeping
+fixtures independent.
 """
 
 from __future__ import annotations
@@ -12,7 +13,12 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import settings
 
@@ -25,18 +31,20 @@ from app.db.models.team import Team
 from app.db.models.user import User
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def engine():
+@pytest_asyncio.fixture
+async def engine() -> AsyncGenerator[AsyncEngine, None]:
     eng = create_async_engine(settings.database_url, echo=False, poolclass=None)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    yield eng
-    await eng.dispose()
+    try:
+        yield eng
+    finally:
+        await eng.dispose()
 
 
 @pytest_asyncio.fixture
-async def session(engine) -> AsyncGenerator[AsyncSession, None]:
+async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as s:
         yield s
