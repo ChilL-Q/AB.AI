@@ -17,23 +17,13 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatTimeAgo } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { initialsOf } from "@/hooks/use-me";
 import { cn } from "@/lib/utils";
 import type { Conversation, Message, PaginatedResponse } from "@/types";
-
-function formatTime(d: string | null) {
-  if (!d) return "";
-  const date = new Date(d);
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  const diff = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-  if (diff < 7) return date.toLocaleDateString("ru-RU", { weekday: "short" });
-  return date.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" });
-}
 
 const CHANNEL_LABEL: Record<string, string> = {
   whatsapp: "WhatsApp",
@@ -177,7 +167,7 @@ export default function ConversationsPage() {
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium truncate">{name}</span>
                           <span className="text-xs text-muted-foreground shrink-0">
-                            {formatTime(c.last_message_at ?? c.created_at)}
+                            {formatTimeAgo(c.last_message_at ?? c.created_at)}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -267,7 +257,7 @@ export default function ConversationsPage() {
                             out ? "opacity-80" : "text-muted-foreground",
                           )}
                         >
-                          <span>{formatTime(m.sent_at ?? m.created_at)}</span>
+                          <span>{formatTimeAgo(m.sent_at ?? m.created_at)}</span>
                           {out && <MessageStatusIcon status={m.status} />}
                         </div>
                       </div>

@@ -49,7 +49,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: Props) {
         full_name: fullName,
         phone,
         email: email || null,
-        tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+        tags: [...new Set(tags.split(",").map((t) => t.trim()).filter(Boolean))],
       };
       if (isEdit && client) {
         const { data } = await api.patch<Client>(`/clients/${client.id}`, body);

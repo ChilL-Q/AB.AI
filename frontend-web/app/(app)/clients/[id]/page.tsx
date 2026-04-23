@@ -17,23 +17,28 @@ import {
   Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { formatDateLong, formatMoney } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ClientFormDialog } from "@/components/client-form-dialog";
 import { initialsOf } from "@/hooks/use-me";
 import type { Client } from "@/types";
 
-function formatMoney(v: string) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "0 ₸";
-  return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₸";
-}
-
-function formatDate(d: string | null) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric" });
+function errorStatus(err: unknown): number | null {
+  const s = (err as { response?: { status?: number } }).response?.status;
+  return typeof s === "number" ? s : null;
 }
 
 export default function ClientDetailPage() {
@@ -41,11 +46,13 @@ export default function ClientDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data: client, isLoading, error } = useQuery({
     queryKey: ["client", id],
     queryFn: async () => (await api.get<Client>(`/clients/${id}`)).data,
     enabled: !!id,
+    retry: (failureCount, err) => errorStatus(err) !== 404 && failureCount < 2,
   });
 
   const del = useMutation({
@@ -67,9 +74,12 @@ export default function ClientDetailPage() {
   }
 
   if (error || !client) {
+    const notFound = errorStatus(error) === 404;
     return (
       <div className="py-16 text-center space-y-4">
-        <p className="text-muted-foreground">Клиент не найден</p>
+        <p className="text-muted-foreground">
+          {notFound ? "Клиент не найден" : "Не удалось загрузить клиента. Попробуйте позже."}
+        </p>
         <Button variant="outline" asChild>
           <Link href="/clients"><ArrowLeft className="h-4 w-4 mr-2" />К списку</Link>
         </Button>
@@ -93,7 +103,7 @@ export default function ClientDetailPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{client.full_name}</h1>
             <p className="text-sm text-muted-foreground">
-              Клиент с {formatDate(client.created_at)} · Источник: {client.source || "manual"}
+              Клиент с {formatDateLong(client.created_at)} · Источник: {client.source || "manual"}
             </p>
             {client.tags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
@@ -112,11 +122,13 @@ export default function ClientDetailPage() {
             variant="outline"
             className="text-destructive hover:text-destructive"
             disabled={del.isPending}
-            onClick={() => {
-              if (confirm(`Удалить клиента «${client.full_name}»?`)) del.mutate();
-            }}
+            onClick={() => setConfirmOpen(true)}
           >
-            {del.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+            {del.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4 mr-2" />
+            )}
             Удалить
           </Button>
         </div>
@@ -138,7 +150,7 @@ export default function ClientDetailPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Последний визит</div>
-            <div className="mt-1 text-2xl font-bold">{formatDate(client.last_visit_at)}</div>
+            <div className="mt-1 text-2xl font-bold">{formatDateLong(client.last_visit_at)}</div>
           </CardContent>
         </Card>
       </div>
@@ -181,7 +193,7 @@ export default function ClientDetailPage() {
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Дата рождения</div>
-                  <div className="font-medium">{formatDate(client.birth_date)}</div>
+                  <div className="font-medium">{formatDateLong(client.birth_date)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -209,6 +221,31 @@ export default function ClientDetailPage() {
       </Tabs>
 
       <ClientFormDialog open={editOpen} onOpenChange={setEditOpen} client={client} />
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить клиента?</AlertDialogTitle>
+            <AlertDialogDescription>
+              «{client.full_name}» будет удалён. Действие можно отменить, обратившись в поддержку.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={del.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={del.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                del.mutate(undefined, { onSuccess: () => setConfirmOpen(false) });
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {del.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
