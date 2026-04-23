@@ -46,6 +46,17 @@ async def create_conversation(
     return await conversation_service.create_conversation(_team_id(current_user), data, session)
 
 
+@router.get("/by-client/{client_id}", response_model=list[ConversationOut])
+async def list_conversations_by_client(
+    client_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    session: SessionDep,
+):
+    return await conversation_service.list_conversations_by_client(
+        _team_id(current_user), client_id, session
+    )
+
+
 @router.get("/{conversation_id}", response_model=ConversationOut)
 async def get_conversation(
     conversation_id: uuid.UUID,

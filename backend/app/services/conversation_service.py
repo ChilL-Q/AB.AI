@@ -85,6 +85,7 @@ async def list_conversations(
             select(
                 Message.conversation_id,
                 Message.text,
+                Message.media_url,
                 func.row_number()
                 .over(partition_by=Message.conversation_id, order_by=Message.created_at.desc())
                 .label("rn"),
@@ -92,9 +93,16 @@ async def list_conversations(
             .where(Message.conversation_id.in_(ids))
             .subquery()
         )
-        res = await session.execute(select(sub.c.conversation_id, sub.c.text).where(sub.c.rn == 1))
-        for cid, text in res.all():
-            previews[cid] = text or ""
+        res = await session.execute(
+            select(sub.c.conversation_id, sub.c.text, sub.c.media_url).where(sub.c.rn == 1)
+        )
+        for cid, text, media_url in res.all():
+            if text:
+                previews[cid] = text
+            elif media_url:
+                previews[cid] = "[вложение]"
+            else:
+                previews[cid] = ""
 
     data = [_to_out(c, previews.get(c.id)) for c in rows]
     return PaginatedResponse(
@@ -114,6 +122,21 @@ async def create_conversation(
     if not client:
         raise NotFoundError("Client not found")
 
+    # Idempotency: if an active conversation with the same client+channel
+    # already exists for this team, return it rather than creating a duplicate.
+    existing = await session.scalar(
+        select(Conversation)
+        .options(selectinload(Conversation.client))
+        .where(
+            Conversation.team_id == team_id,
+            Conversation.client_id == data.client_id,
+            Conversation.channel == data.channel,
+            Conversation.status == "active",
+        )
+    )
+    if existing:
+        return _to_out(existing)
+
     conv = Conversation(
         team_id=team_id,
         client_id=data.client_id,
@@ -131,6 +154,32 @@ async def get_conversation(
 ) -> ConversationOut:
     conv = await _load_conversation(team_id, conversation_id, session)
     return _to_out(conv)
+
+
+async def list_conversations_by_client(
+    team_id: uuid.UUID, client_id: uuid.UUID, session: AsyncSession
+) -> list[ConversationOut]:
+    # Ensure the client belongs to this team before exposing its conversations.
+    client = await session.scalar(
+        select(Client).where(
+            Client.id == client_id, Client.team_id == team_id, Client.deleted_at.is_(None)
+        )
+    )
+    if not client:
+        raise NotFoundError("Client not found")
+
+    rows = (
+        await session.scalars(
+            select(Conversation)
+            .options(selectinload(Conversation.client))
+            .where(Conversation.team_id == team_id, Conversation.client_id == client_id)
+            .order_by(
+                Conversation.last_message_at.desc().nulls_last(),
+                Conversation.created_at.desc(),
+            )
+        )
+    ).all()
+    return [_to_out(c) for c in rows]
 
 
 async def update_conversation(
