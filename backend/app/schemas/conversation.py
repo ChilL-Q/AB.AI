@@ -64,6 +64,18 @@ class MessageOut(BaseModel):
     created_at: datetime
 
 
+class MessagePage(BaseModel):
+    """Cursor-paginated message page (oldest → newest within the page).
+
+    To fetch older messages, call again with `before=<next_cursor>`. When
+    `has_more` is False the caller has reached the start of the thread.
+    """
+
+    data: list[MessageOut]
+    next_cursor: uuid.UUID | None = None
+    has_more: bool
+
+
 class MessagePublicOut(BaseModel):
     """Narrowed Message projection for public surfaces (client widget,
     webhook echoes). Omits internal fields like user_id and external_id."""

@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Loader2,
   MessageSquare,
@@ -28,8 +34,11 @@ import type {
   Conversation,
   ConversationChannel,
   Message,
+  MessagePage,
   PaginatedResponse,
 } from "@/types";
+
+const MESSAGES_PAGE_SIZE = 50;
 
 const CHANNEL_LABEL: Record<ConversationChannel, string> = {
   whatsapp: "WhatsApp",
@@ -88,19 +97,28 @@ export default function ConversationsPage() {
     }
   }, [conversations, selectedId]);
 
-  const messagesQ = useQuery({
+  const messagesQ = useInfiniteQuery({
     queryKey: ["conversation-messages", selectedId],
-    queryFn: async () => {
-      const { data } = await api.get<PaginatedResponse<Message>>(
+    // pageParam = cursor message id for `?before=`; null → most-recent page.
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const { data } = await api.get<MessagePage>(
         `/conversations/${selectedId}/messages`,
-        { params: { page: 1, limit: 200 } },
+        { params: { limit: MESSAGES_PAGE_SIZE, before: pageParam ?? undefined } },
       );
       return data;
     },
+    getNextPageParam: (lastPage) => (lastPage.has_more ? lastPage.next_cursor : undefined),
     enabled: !!selectedId,
   });
 
-  const messages = useMemo(() => messagesQ.data?.data ?? [], [messagesQ.data]);
+  // Pages come in reverse order (newest page first, then older pages), each
+  // page is oldest→newest internally. To render chronologically we reverse the
+  // page list and flat-concat.
+  const messages = useMemo<Message[]>(() => {
+    const pages = messagesQ.data?.pages ?? [];
+    return [...pages].reverse().flatMap((p) => p.data);
+  }, [messagesQ.data]);
 
   // Mark conversation as read when it opens or when new inbound messages arrive.
   const markReadMutation = useMutation({
@@ -118,12 +136,77 @@ export default function ConversationsPage() {
     markReadRef.current(selected.id);
   }, [selected]);
 
-  // Scroll to bottom on new messages / selection change
-  useEffect(() => {
+  // Virtualize the message list. Estimate keeps initial layout sane; real
+  // heights are measured via `measureElement` and remembered after first render.
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+    getItemKey: (i) => messages[i]?.id ?? i,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+
+  // Scroll to bottom on conversation switch and when we send a new outbound.
+  // We skip auto-scroll when older pages are being prepended (handled below).
+  const previousMessagesCountRef = useRef(0);
+  const prependAnchorRef = useRef<{ heightBefore: number; topBefore: number } | null>(null);
+
+  // Capture scroll position *before* older messages prepend, so we can restore
+  // the visible region after the DOM expands at the top.
+  const loadOlder = useCallback(() => {
+    if (!messagesQ.hasNextPage || messagesQ.isFetchingNextPage) return;
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      prependAnchorRef.current = {
+        heightBefore: scrollRef.current.scrollHeight,
+        topBefore: scrollRef.current.scrollTop,
+      };
     }
-  }, [messages, selectedId]);
+    messagesQ.fetchNextPage();
+  }, [messagesQ]);
+
+  // Trigger "load older" when the user scrolls near the top.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (el.scrollTop < 80) loadOlder();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [loadOlder]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    // Case 1: we just prepended an older page — keep the previously-visible
+    // message under the user's eye by restoring scrollTop + height delta.
+    if (prependAnchorRef.current) {
+      const { heightBefore, topBefore } = prependAnchorRef.current;
+      el.scrollTop = el.scrollHeight - heightBefore + topBefore;
+      prependAnchorRef.current = null;
+      previousMessagesCountRef.current = messages.length;
+      return;
+    }
+
+    // Case 2: selection changed or first load — pin to bottom.
+    // Case 3: new outbound/inbound at the tail — also pin to bottom
+    //   (we only detect growth at the end; prepend is handled above).
+    const grew = messages.length > previousMessagesCountRef.current;
+    const firstLoad = previousMessagesCountRef.current === 0 && messages.length > 0;
+    if (firstLoad || grew) {
+      rowVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+    }
+    previousMessagesCountRef.current = messages.length;
+  }, [messages, rowVirtualizer]);
+
+  // Reset bottom-anchoring bookkeeping whenever we switch threads.
+  useEffect(() => {
+    previousMessagesCountRef.current = 0;
+    prependAnchorRef.current = null;
+  }, [selectedId]);
 
   const sendMutation = useMutation({
     mutationFn: async (text: string) => {
@@ -270,7 +353,7 @@ export default function ConversationsPage() {
               </div>
             </header>
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto">
               {messagesQ.isLoading ? (
                 <div className="py-12 flex justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -280,37 +363,66 @@ export default function ConversationsPage() {
                   Сообщений пока нет
                 </div>
               ) : (
-                messages.map((m) => {
-                  const out = m.direction === "outbound";
-                  return (
-                    <div key={m.id} className={cn("flex", out ? "justify-end" : "justify-start")}>
-                      <div
-                        className={cn(
-                          "max-w-[70%] rounded-2xl px-4 py-2 text-sm",
-                          out
-                            ? "bg-primary text-primary-foreground rounded-br-md"
-                            : "bg-muted rounded-bl-md",
-                        )}
-                      >
-                        {m.sent_by === "ai" && (
-                          <div className="text-[10px] uppercase tracking-wider opacity-70 mb-1">
-                            AI
-                          </div>
-                        )}
-                        <div className="whitespace-pre-wrap break-words">{m.text ?? ""}</div>
-                        <div
-                          className={cn(
-                            "flex items-center justify-end gap-1 mt-1 text-[10px]",
-                            out ? "opacity-80" : "text-muted-foreground",
-                          )}
-                        >
-                          <span>{formatTimeAgo(m.sent_at ?? m.created_at)}</span>
-                          {out && <MessageStatusIcon status={m.status} />}
-                        </div>
+                <div
+                  style={{ height: totalSize, position: "relative" }}
+                  className="px-6 py-4"
+                >
+                  {messagesQ.isFetchingNextPage && (
+                    <div className="absolute top-1 left-0 right-0 flex justify-center z-10">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-background/80 backdrop-blur px-3 py-1 rounded-full border">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Загрузка истории...
                       </div>
                     </div>
-                  );
-                })
+                  )}
+                  {virtualItems.map((vi) => {
+                    const m = messages[vi.index];
+                    if (!m) return null;
+                    const out = m.direction === "outbound";
+                    return (
+                      <div
+                        key={vi.key}
+                        data-index={vi.index}
+                        ref={rowVirtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          transform: `translateY(${vi.start}px)`,
+                        }}
+                        className="pb-3"
+                      >
+                        <div className={cn("flex", out ? "justify-end" : "justify-start")}>
+                          <div
+                            className={cn(
+                              "max-w-[70%] rounded-2xl px-4 py-2 text-sm",
+                              out
+                                ? "bg-primary text-primary-foreground rounded-br-md"
+                                : "bg-muted rounded-bl-md",
+                            )}
+                          >
+                            {m.sent_by === "ai" && (
+                              <div className="text-[10px] uppercase tracking-wider opacity-70 mb-1">
+                                AI
+                              </div>
+                            )}
+                            <div className="whitespace-pre-wrap break-words">{m.text ?? ""}</div>
+                            <div
+                              className={cn(
+                                "flex items-center justify-end gap-1 mt-1 text-[10px]",
+                                out ? "opacity-80" : "text-muted-foreground",
+                              )}
+                            >
+                              <span>{formatTimeAgo(m.sent_at ?? m.created_at)}</span>
+                              {out && <MessageStatusIcon status={m.status} />}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
