@@ -22,16 +22,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { initialsOf } from "@/hooks/use-me";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
-import type { Conversation, Message, PaginatedResponse } from "@/types";
+import type {
+  Conversation,
+  ConversationChannel,
+  Message,
+  PaginatedResponse,
+} from "@/types";
 
-const CHANNEL_LABEL: Record<string, string> = {
+const CHANNEL_LABEL: Record<ConversationChannel, string> = {
   whatsapp: "WhatsApp",
   telegram: "Telegram",
   sms: "SMS",
 };
 
-const CHANNEL_COLOR: Record<string, string> = {
+const CHANNEL_COLOR: Record<ConversationChannel, string> = {
   whatsapp: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   telegram: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   sms: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -50,28 +56,34 @@ export default function ConversationsPage() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const conversationsQ = useQuery({
-    queryKey: ["conversations", { search }],
+    queryKey: ["conversations", { search: debouncedSearch }],
     queryFn: async () => {
       const { data } = await api.get<PaginatedResponse<Conversation>>("/conversations", {
-        params: { page: 1, limit: 50, search: search || undefined },
+        params: { page: 1, limit: 50, search: debouncedSearch || undefined },
       });
       return data;
     },
   });
 
-  const conversations = conversationsQ.data?.data ?? [];
+  const conversations = useMemo(
+    () => conversationsQ.data?.data ?? [],
+    [conversationsQ.data],
+  );
   const selected = useMemo(
     () => conversations.find((c) => c.id === selectedId) ?? null,
     [conversations, selectedId],
   );
 
-  // Auto-select first conversation when list loads
+  // Auto-select first conversation; reselect if current one filtered out.
   useEffect(() => {
-    if (!selectedId && conversations.length > 0) {
+    if (conversations.length === 0) return;
+    const stillVisible = selectedId && conversations.some((c) => c.id === selectedId);
+    if (!stillVisible) {
       setSelectedId(conversations[0].id);
     }
   }, [conversations, selectedId]);
@@ -88,14 +100,14 @@ export default function ConversationsPage() {
     enabled: !!selectedId,
   });
 
-  const messages = messagesQ.data?.data ?? [];
+  const messages = useMemo(() => messagesQ.data?.data ?? [], [messagesQ.data]);
 
   // Scroll to bottom on new messages / selection change
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages.length, selectedId]);
+  }, [messages, selectedId]);
 
   const sendMutation = useMutation({
     mutationFn: async (text: string) => {
@@ -111,6 +123,13 @@ export default function ConversationsPage() {
       await qc.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
+
+  const sendError = sendMutation.error
+    ? (sendMutation.error as { response?: { data?: { detail?: string } }; message?: string })
+        .response?.data?.detail ??
+      (sendMutation.error as { message?: string }).message ??
+      "Не удалось отправить сообщение"
+    : null;
 
   const onSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,22 +286,30 @@ export default function ConversationsPage() {
               )}
             </div>
 
-            <form onSubmit={onSend} className="border-t p-4 flex gap-2">
-              <Input
-                placeholder="Написать сообщение..."
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                disabled={sendMutation.isPending}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={!draft.trim() || sendMutation.isPending}>
-                {sendMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </form>
+            <div className="border-t">
+              {sendError && (
+                <div className="px-4 pt-3 text-xs text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{sendError}</span>
+                </div>
+              )}
+              <form onSubmit={onSend} className="p-4 flex gap-2">
+                <Input
+                  placeholder="Написать сообщение..."
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  disabled={sendMutation.isPending}
+                  className="flex-1"
+                />
+                <Button type="submit" disabled={!draft.trim() || sendMutation.isPending}>
+                  {sendMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </form>
+            </div>
           </>
         )}
       </section>
@@ -310,7 +337,16 @@ export default function ConversationsPage() {
             </div>
             <div className="flex items-center gap-3">
               <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground">—</span>
+              {selected.client.email ? (
+                <a
+                  href={`mailto:${selected.client.email}`}
+                  className="truncate hover:underline"
+                >
+                  {selected.client.email}
+                </a>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </div>
             <div className="pt-2 border-t">
               <Badge variant="outline" className="text-xs">

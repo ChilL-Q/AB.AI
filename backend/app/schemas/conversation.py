@@ -15,6 +15,7 @@ class ConversationCreate(BaseModel):
 
 class ConversationUpdate(BaseModel):
     status: ConversationStatus | None = None
+    channel: ConversationChannel | None = None
 
 
 class ClientMini(BaseModel):
@@ -23,6 +24,7 @@ class ClientMini(BaseModel):
     id: uuid.UUID
     full_name: str
     phone: str
+    email: str | None = None
 
 
 class ConversationOut(BaseModel):

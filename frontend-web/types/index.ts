@@ -62,6 +62,7 @@ export interface ConversationClientMini {
   id: string;
   full_name: string;
   phone: string;
+  email: string | null;
 }
 
 export interface Conversation {
