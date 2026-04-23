@@ -22,9 +22,7 @@ from app.services import conversation_service
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_is_idempotent(
-    session: AsyncSession, team: Team, client: Client
-):
+async def test_create_conversation_is_idempotent(session: AsyncSession, team: Team, client: Client):
     payload = ConversationCreate(client_id=client.id, channel="whatsapp")
     first = await conversation_service.create_conversation(team.id, payload, session)
     second = await conversation_service.create_conversation(team.id, payload, session)
@@ -92,9 +90,7 @@ async def test_update_conversation_can_switch_channel_and_status(
 
 
 @pytest.mark.asyncio
-async def test_list_by_client_scopes_to_team(
-    session: AsyncSession, team: Team, client: Client
-):
+async def test_list_by_client_scopes_to_team(session: AsyncSession, team: Team, client: Client):
     await conversation_service.create_conversation(
         team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
     )
