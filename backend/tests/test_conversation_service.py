@@ -6,6 +6,8 @@ conftest.engine (schema recreated once per session, rolled back per test).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,6 +89,67 @@ async def test_update_conversation_can_switch_channel_and_status(
     )
     assert updated.channel == "telegram"
     assert updated.status == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, client: Client):
+    # Postgres now() returns the transaction-start timestamp, and this whole
+    # test runs in a single rollback-wrapped transaction, so every message's
+    # server-default created_at would otherwise be identical. We set explicit
+    # timestamps to exercise the "newer than marker" logic as it would look
+    # across separate real-world webhook transactions.
+    conv = await conversation_service.create_conversation(
+        team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
+    )
+    base = datetime.now(UTC)
+    for i in range(2):
+        session.add(
+            Message(
+                conversation_id=conv.id,
+                direction="inbound",
+                text="hi",
+                status="delivered",
+                sent_by="system",
+                created_at=base + timedelta(seconds=i),
+            )
+        )
+    await session.flush()
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 2
+
+    await conversation_service.mark_conversation_read(team.id, conv.id, session)
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 0
+
+    session.add(
+        Message(
+            conversation_id=conv.id,
+            direction="outbound",
+            text="reply",
+            status="sent",
+            sent_by="human",
+            created_at=base + timedelta(seconds=10),
+        )
+    )
+    session.add(
+        Message(
+            conversation_id=conv.id,
+            direction="inbound",
+            text="thanks",
+            status="delivered",
+            sent_by="system",
+            created_at=base + timedelta(seconds=11),
+        )
+    )
+    await session.flush()
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 1
 
 
 @pytest.mark.asyncio
