@@ -196,9 +196,7 @@ async def test_list_messages_cursor_pagination(session: AsyncSession, team: Team
 
 
 @pytest.mark.asyncio
-async def test_list_messages_empty_conversation(
-    session: AsyncSession, team: Team, client: Client
-):
+async def test_list_messages_empty_conversation(session: AsyncSession, team: Team, client: Client):
     conv = await conversation_service.create_conversation(
         team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
     )
