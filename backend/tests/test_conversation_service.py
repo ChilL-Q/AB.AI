@@ -153,6 +153,62 @@ async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, cli
 
 
 @pytest.mark.asyncio
+async def test_list_messages_cursor_pagination(session: AsyncSession, team: Team, client: Client):
+    conv = await conversation_service.create_conversation(
+        team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
+    )
+    base = datetime.now(UTC)
+    # Seed 7 messages with strictly increasing timestamps so the (created_at, id)
+    # cursor has a deterministic order regardless of insertion order.
+    for i in range(7):
+        session.add(
+            Message(
+                conversation_id=conv.id,
+                direction="inbound" if i % 2 == 0 else "outbound",
+                text=f"msg-{i}",
+                status="delivered",
+                sent_by="system",
+                created_at=base + timedelta(seconds=i),
+            )
+        )
+    await session.flush()
+
+    # First page: the 3 newest, returned chronologically (msg-4, msg-5, msg-6)
+    page1 = await conversation_service.list_messages(team.id, conv.id, session, limit=3)
+    assert [m.text for m in page1.data] == ["msg-4", "msg-5", "msg-6"]
+    assert page1.has_more is True
+    assert page1.next_cursor == page1.data[0].id  # cursor = oldest in page
+
+    # Second page: older than cursor → msg-1, msg-2, msg-3
+    page2 = await conversation_service.list_messages(
+        team.id, conv.id, session, limit=3, before_id=page1.next_cursor
+    )
+    assert [m.text for m in page2.data] == ["msg-1", "msg-2", "msg-3"]
+    assert page2.has_more is True
+
+    # Final page: just msg-0, no more
+    page3 = await conversation_service.list_messages(
+        team.id, conv.id, session, limit=3, before_id=page2.next_cursor
+    )
+    assert [m.text for m in page3.data] == ["msg-0"]
+    assert page3.has_more is False
+    assert page3.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_list_messages_empty_conversation(
+    session: AsyncSession, team: Team, client: Client
+):
+    conv = await conversation_service.create_conversation(
+        team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
+    )
+    page = await conversation_service.list_messages(team.id, conv.id, session, limit=50)
+    assert page.data == []
+    assert page.has_more is False
+    assert page.next_cursor is None
+
+
+@pytest.mark.asyncio
 async def test_list_by_client_scopes_to_team(session: AsyncSession, team: Team, client: Client):
     await conversation_service.create_conversation(
         team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session

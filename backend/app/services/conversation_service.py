@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -16,6 +16,7 @@ from app.schemas.conversation import (
     ConversationUpdate,
     MessageCreate,
     MessageOut,
+    MessagePage,
 )
 
 
@@ -232,20 +233,51 @@ async def list_messages(
     team_id: uuid.UUID,
     conversation_id: uuid.UUID,
     session: AsyncSession,
-    page: int = 1,
-    limit: int = 100,
-) -> PaginatedResponse[MessageOut]:
+    limit: int = 50,
+    before_id: uuid.UUID | None = None,
+) -> MessagePage:
+    """Cursor-paginated message fetch.
+
+    Strategy: fetch the N newest messages older than the cursor (or the N
+    newest overall when no cursor is given), sorted DESC by (created_at, id),
+    then reverse in Python so the returned page is oldest→newest — the shape
+    the client expects to append above the current view on "load older".
+
+    Fetching `limit + 1` lets us set `has_more` without a second COUNT query.
+    """
     await _load_conversation(team_id, conversation_id, session)
-    base = select(Message).where(Message.conversation_id == conversation_id)
-    total = await session.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = (
-        await session.scalars(
-            base.order_by(Message.created_at.asc()).offset((page - 1) * limit).limit(limit)
-        )
-    ).all()
-    return PaginatedResponse(
+    q = select(Message).where(Message.conversation_id == conversation_id)
+
+    if before_id is not None:
+        cursor_row = (
+            await session.execute(
+                select(Message.created_at, Message.id).where(
+                    Message.id == before_id,
+                    Message.conversation_id == conversation_id,
+                )
+            )
+        ).one_or_none()
+        if cursor_row is None:
+            raise NotFoundError("Cursor message not found")
+        cursor_ts, cursor_uuid = cursor_row
+        q = q.where(tuple_(Message.created_at, Message.id) < tuple_(cursor_ts, cursor_uuid))
+
+    rows = list(
+        (
+            await session.scalars(
+                q.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1)
+            )
+        ).all()
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    rows.reverse()  # oldest → newest for the returned page
+
+    next_cursor = rows[0].id if has_more and rows else None
+    return MessagePage(
         data=[MessageOut.model_validate(m) for m in rows],
-        meta=PaginationMeta(total=total, page=page, limit=limit, has_next=page * limit < total),
+        next_cursor=next_cursor,
+        has_more=has_more,
     )
 
 

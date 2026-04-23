@@ -12,6 +12,7 @@ from app.schemas.conversation import (
     ConversationUpdate,
     MessageCreate,
     MessageOut,
+    MessagePage,
 )
 from app.services import conversation_service
 
@@ -81,16 +82,16 @@ async def update_conversation(
     )
 
 
-@router.get("/{conversation_id}/messages", response_model=PaginatedResponse[MessageOut])
+@router.get("/{conversation_id}/messages", response_model=MessagePage)
 async def list_messages(
     conversation_id: uuid.UUID,
     current_user: CurrentUserDep,
     session: SessionDep,
-    page: int = Query(1, ge=1),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(50, ge=1, le=200),
+    before: uuid.UUID | None = Query(None, description="Message id cursor; returns older ones"),
 ):
     return await conversation_service.list_messages(
-        _team_id(current_user), conversation_id, session, page, limit
+        _team_id(current_user), conversation_id, session, limit=limit, before_id=before
     )
 
 

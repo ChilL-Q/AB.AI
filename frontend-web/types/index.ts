@@ -96,3 +96,14 @@ export interface Message {
   read_at: string | null;
   created_at: string;
 }
+
+/**
+ * Cursor page returned by `GET /conversations/{id}/messages`.
+ * `data` is ordered oldest→newest within the page; pass `next_cursor`
+ * as `?before=` to fetch the previous (older) slice.
+ */
+export interface MessagePage {
+  data: Message[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
