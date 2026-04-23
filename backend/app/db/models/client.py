@@ -8,7 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
 
-ClientSource = Enum("manual", "import", "self_register", name="client_source")
+ClientSource = Enum(
+    "manual", "import", "self_register", "whatsapp", "telegram", "sms", name="client_source"
+)
 
 
 class Client(Base, UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin):
