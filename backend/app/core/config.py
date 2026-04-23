@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     whatsapp_access_token: str = ""
     whatsapp_verify_token: str = ""
+    # Shared secret for self-hosted inbound webhooks (bridges, tests).
+    inbound_webhook_secret: str = ""
 
     # Telegram
     telegram_bot_token: str = ""

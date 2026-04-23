@@ -62,3 +62,19 @@ class MessageOut(BaseModel):
     delivered_at: datetime | None
     read_at: datetime | None
     created_at: datetime
+
+
+class MessagePublicOut(BaseModel):
+    """Narrowed Message projection for public surfaces (client widget,
+    webhook echoes). Omits internal fields like user_id and external_id."""
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    direction: str
+    text: str | None
+    media_url: str | None
+    sent_by: str
+    sent_at: datetime | None
+    created_at: datetime
