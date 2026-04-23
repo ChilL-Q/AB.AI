@@ -26,7 +26,12 @@ class Conversation(Base, UUIDPrimaryKey, TimestampMixin):
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_read_message_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("messages.id", ondelete="SET NULL", use_alter=True),
+        ForeignKey(
+            "messages.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_conversations_last_read_message_id_messages",
+        ),
         nullable=True,
     )
 
