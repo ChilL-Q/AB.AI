@@ -1,9 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.exceptions import ForbiddenError
+from app.core.limiter import limiter
 from app.schemas.common import PaginatedResponse
 from app.schemas.conversation import (
     ConversationCreate,
@@ -105,7 +106,9 @@ async def mark_conversation_read(
 
 
 @router.post("/{conversation_id}/messages", response_model=MessageOut, status_code=201)
+@limiter.limit("30/minute")
 async def send_message(
+    request: Request,  # noqa: ARG001 — required by slowapi key_func
     conversation_id: uuid.UUID,
     data: MessageCreate,
     current_user: CurrentUserDep,
