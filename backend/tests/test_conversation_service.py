@@ -6,6 +6,8 @@ conftest.engine (schema recreated once per session, rolled back per test).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,10 +93,16 @@ async def test_update_conversation_can_switch_channel_and_status(
 
 @pytest.mark.asyncio
 async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, client: Client):
+    # Postgres now() returns the transaction-start timestamp, and this whole
+    # test runs in a single rollback-wrapped transaction, so every message's
+    # server-default created_at would otherwise be identical. We set explicit
+    # timestamps to exercise the "newer than marker" logic as it would look
+    # across separate real-world webhook transactions.
     conv = await conversation_service.create_conversation(
         team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
     )
-    for _ in range(2):
+    base = datetime.now(UTC)
+    for i in range(2):
         session.add(
             Message(
                 conversation_id=conv.id,
@@ -102,6 +110,7 @@ async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, cli
                 text="hi",
                 status="delivered",
                 sent_by="system",
+                created_at=base + timedelta(seconds=i),
             )
         )
     await session.flush()
@@ -123,6 +132,7 @@ async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, cli
             text="reply",
             status="sent",
             sent_by="human",
+            created_at=base + timedelta(seconds=10),
         )
     )
     session.add(
@@ -132,6 +142,7 @@ async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, cli
             text="thanks",
             status="delivered",
             sent_by="system",
+            created_at=base + timedelta(seconds=11),
         )
     )
     await session.flush()
