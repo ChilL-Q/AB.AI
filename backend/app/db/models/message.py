@@ -39,4 +39,7 @@ class Message(Base, UUIDPrimaryKey, TimestampMixin):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
 
     # Relationships
-    conversation: Mapped["Conversation"] = relationship(back_populates="messages")  # noqa: F821
+    conversation: Mapped["Conversation"] = relationship(  # noqa: F821
+        back_populates="messages",
+        foreign_keys=[conversation_id],
+    )

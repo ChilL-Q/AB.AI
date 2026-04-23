@@ -32,4 +32,7 @@ class Conversation(Base, UUIDPrimaryKey, TimestampMixin):
 
     # Relationships
     client: Mapped["Client"] = relationship(back_populates="conversations")  # noqa: F821
-    messages: Mapped[list["Message"]] = relationship(back_populates="conversation")  # noqa: F821
+    messages: Mapped[list["Message"]] = relationship(  # noqa: F821
+        back_populates="conversation",
+        foreign_keys="Message.conversation_id",
+    )
