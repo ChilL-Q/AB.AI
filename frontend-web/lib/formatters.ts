@@ -55,6 +55,18 @@ export function formatTimeAgo(d: string | null): string {
 }
 
 /**
+ * Extract up to 2 uppercase initials from a full name, e.g. "Иван Петров" → "ИП".
+ */
+export function initialsOf(name: string): string {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+/**
  * Best-effort international phone formatting. Handles common cases for
  * CIS countries (KZ/RU: 11 digits, UZ: 12 digits with 998 prefix).
  * Returns input unchanged when format is unknown.

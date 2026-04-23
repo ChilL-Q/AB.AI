@@ -61,6 +61,7 @@ export default function ClientDetailPage() {
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.removeQueries({ queryKey: ["client", id] });
       router.push("/clients");
     },
   });

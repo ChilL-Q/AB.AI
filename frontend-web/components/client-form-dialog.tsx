@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -21,9 +21,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client?: Client | null;
+  onCreated?: () => void;
 };
 
-export function ClientFormDialog({ open, onOpenChange, client }: Props) {
+export function ClientFormDialog({ open, onOpenChange, client, onCreated }: Props) {
   const qc = useQueryClient();
   const isEdit = !!client;
 
@@ -33,15 +34,23 @@ export function ClientFormDialog({ open, onOpenChange, client }: Props) {
   const [tags, setTags] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  // Reset fields only on the closed→open transition so in-flight user edits
+  // aren't clobbered when React Query refetches and produces a new `client` ref.
+  const wasOpen = useRef(false);
+  // Keep the freshest client snapshot available without adding it as an effect dep.
+  const clientRef = useRef(client);
+  clientRef.current = client;
   useEffect(() => {
-    if (open) {
-      setFullName(client?.full_name ?? "");
-      setPhone(client?.phone ?? "");
-      setEmail(client?.email ?? "");
-      setTags((client?.tags ?? []).join(", "));
+    if (open && !wasOpen.current) {
+      const c = clientRef.current;
+      setFullName(c?.full_name ?? "");
+      setPhone(c?.phone ?? "");
+      setEmail(c?.email ?? "");
+      setTags((c?.tags ?? []).join(", "));
       setError(null);
     }
-  }, [open, client]);
+    wasOpen.current = open;
+  }, [open]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -61,6 +70,7 @@ export function ClientFormDialog({ open, onOpenChange, client }: Props) {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["clients"] });
       if (client) await qc.invalidateQueries({ queryKey: ["client", client.id] });
+      if (!isEdit) onCreated?.();
       onOpenChange(false);
     },
     onError: (err: unknown) => {
