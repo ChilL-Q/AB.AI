@@ -90,6 +90,58 @@ async def test_update_conversation_can_switch_channel_and_status(
 
 
 @pytest.mark.asyncio
+async def test_unread_count_and_mark_read(session: AsyncSession, team: Team, client: Client):
+    conv = await conversation_service.create_conversation(
+        team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session
+    )
+    for _ in range(2):
+        session.add(
+            Message(
+                conversation_id=conv.id,
+                direction="inbound",
+                text="hi",
+                status="delivered",
+                sent_by="system",
+            )
+        )
+    await session.flush()
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 2
+
+    await conversation_service.mark_conversation_read(team.id, conv.id, session)
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 0
+
+    session.add(
+        Message(
+            conversation_id=conv.id,
+            direction="outbound",
+            text="reply",
+            status="sent",
+            sent_by="human",
+        )
+    )
+    session.add(
+        Message(
+            conversation_id=conv.id,
+            direction="inbound",
+            text="thanks",
+            status="delivered",
+            sent_by="system",
+        )
+    )
+    await session.flush()
+
+    page = await conversation_service.list_conversations(team.id, session)
+    [row] = [c for c in page.data if c.id == conv.id]
+    assert row.unread_count == 1
+
+
+@pytest.mark.asyncio
 async def test_list_by_client_scopes_to_team(session: AsyncSession, team: Team, client: Client):
     await conversation_service.create_conversation(
         team.id, ConversationCreate(client_id=client.id, channel="whatsapp"), session

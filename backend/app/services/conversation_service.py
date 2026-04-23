@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.core.exceptions import NotFoundError
 from app.db.models.client import Client
@@ -32,7 +32,11 @@ async def _load_conversation(
     return conv
 
 
-def _to_out(conv: Conversation, last_preview: str | None = None) -> ConversationOut:
+def _to_out(
+    conv: Conversation,
+    last_preview: str | None = None,
+    unread_count: int = 0,
+) -> ConversationOut:
     return ConversationOut.model_validate(
         {
             "id": conv.id,
@@ -44,9 +48,38 @@ def _to_out(conv: Conversation, last_preview: str | None = None) -> Conversation
             "created_at": conv.created_at,
             "client": conv.client,
             "last_message_preview": last_preview,
-            "unread_count": 0,
+            "unread_count": unread_count,
         }
     )
+
+
+async def _unread_counts(
+    conversation_ids: list[uuid.UUID], session: AsyncSession
+) -> dict[uuid.UUID, int]:
+    """Count inbound messages newer than each conversation's last_read marker.
+
+    For conversations without a read marker all inbound messages are unread.
+    Executes as a single aggregate query over the N listed conversations.
+    """
+    if not conversation_ids:
+        return {}
+    last_read = aliased(Message)
+    res = await session.execute(
+        select(Conversation.id, func.count(Message.id))
+        .select_from(Conversation)
+        .join(Message, Message.conversation_id == Conversation.id)
+        .outerjoin(last_read, Conversation.last_read_message_id == last_read.id)
+        .where(
+            Conversation.id.in_(conversation_ids),
+            Message.direction == "inbound",
+            or_(
+                Conversation.last_read_message_id.is_(None),
+                Message.created_at > last_read.created_at,
+            ),
+        )
+        .group_by(Conversation.id)
+    )
+    return {cid: count for cid, count in res.all()}
 
 
 async def list_conversations(
@@ -104,7 +137,8 @@ async def list_conversations(
             else:
                 previews[cid] = ""
 
-    data = [_to_out(c, previews.get(c.id)) for c in rows]
+    unread = await _unread_counts([c.id for c in rows], session)
+    data = [_to_out(c, previews.get(c.id), unread.get(c.id, 0)) for c in rows]
     return PaginatedResponse(
         data=data,
         meta=PaginationMeta(total=total, page=page, limit=limit, has_next=page * limit < total),
@@ -238,3 +272,22 @@ async def send_message(
     conv.last_message_at = now
     await session.flush()
     return MessageOut.model_validate(msg)
+
+
+async def mark_conversation_read(
+    team_id: uuid.UUID, conversation_id: uuid.UUID, session: AsyncSession
+) -> ConversationOut:
+    """Mark all inbound messages in the thread as read by pinning the marker
+    to the latest inbound message. Idempotent: no-op if there are no inbound
+    messages, or the marker already points at the latest one."""
+    conv = await _load_conversation(team_id, conversation_id, session)
+    latest_inbound_id = await session.scalar(
+        select(Message.id)
+        .where(Message.conversation_id == conv.id, Message.direction == "inbound")
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    )
+    if latest_inbound_id and conv.last_read_message_id != latest_inbound_id:
+        conv.last_read_message_id = latest_inbound_id
+        await session.flush()
+    return _to_out(conv, unread_count=0)

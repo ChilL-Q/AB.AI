@@ -93,6 +93,17 @@ async def list_messages(
     )
 
 
+@router.post("/{conversation_id}/read", response_model=ConversationOut)
+async def mark_conversation_read(
+    conversation_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    session: SessionDep,
+):
+    return await conversation_service.mark_conversation_read(
+        _team_id(current_user), conversation_id, session
+    )
+
+
 @router.post("/{conversation_id}/messages", response_model=MessageOut, status_code=201)
 async def send_message(
     conversation_id: uuid.UUID,

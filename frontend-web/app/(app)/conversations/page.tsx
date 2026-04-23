@@ -102,6 +102,22 @@ export default function ConversationsPage() {
 
   const messages = useMemo(() => messagesQ.data?.data ?? [], [messagesQ.data]);
 
+  // Mark conversation as read when it opens or when new inbound messages arrive.
+  const markReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/conversations/${id}/read`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+  const markReadRef = useRef(markReadMutation.mutate);
+  markReadRef.current = markReadMutation.mutate;
+  useEffect(() => {
+    if (!selected || selected.unread_count === 0) return;
+    markReadRef.current(selected.id);
+  }, [selected]);
+
   // Scroll to bottom on new messages / selection change
   useEffect(() => {
     if (scrollRef.current) {
@@ -198,9 +214,21 @@ export default function ConversationsPage() {
                           >
                             {CHANNEL_LABEL[c.channel] ?? c.channel}
                           </span>
-                          <span className="text-xs text-muted-foreground truncate flex-1">
+                          <span
+                            className={cn(
+                              "text-xs truncate flex-1",
+                              c.unread_count > 0 && !active
+                                ? "text-foreground font-medium"
+                                : "text-muted-foreground",
+                            )}
+                          >
                             {c.last_message_preview ?? "—"}
                           </span>
+                          {c.unread_count > 0 && !active && (
+                            <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center">
+                              {c.unread_count > 99 ? "99+" : c.unread_count}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </button>
