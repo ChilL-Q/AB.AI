@@ -54,3 +54,44 @@ export interface TokenResponse {
   refresh_token: string;
   token_type: string;
 }
+
+export type ConversationChannel = "whatsapp" | "telegram" | "sms";
+export type ConversationStatus = "active" | "resolved" | "escalated";
+
+export interface ConversationClientMini {
+  id: string;
+  full_name: string;
+  phone: string;
+}
+
+export interface Conversation {
+  id: string;
+  team_id: string;
+  client_id: string;
+  channel: ConversationChannel;
+  status: ConversationStatus;
+  last_message_at: string | null;
+  created_at: string;
+  client: ConversationClientMini | null;
+  last_message_preview: string | null;
+  unread_count: number;
+}
+
+export type MessageDirection = "inbound" | "outbound";
+export type MessageStatus = "pending" | "sent" | "delivered" | "read" | "failed";
+export type MessageSentBy = "ai" | "human" | "system";
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  direction: MessageDirection;
+  text: string | null;
+  media_url: string | null;
+  status: MessageStatus;
+  sent_by: MessageSentBy;
+  user_id: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  created_at: string;
+}
