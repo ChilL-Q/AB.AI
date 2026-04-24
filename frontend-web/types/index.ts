@@ -107,3 +107,23 @@ export interface MessagePage {
   next_cursor: string | null;
   has_more: boolean;
 }
+
+export type AIAgentMode = "auto" | "semi_auto" | "manual";
+
+export interface AIAgentConfig {
+  id: string;
+  team_id: string;
+  mode: AIAgentMode;
+  personality: string | null;
+  tone: string;
+  knowledge_base: Record<string, string>;
+  forbidden_topics: string[];
+  escalation_rules: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AISuggestion {
+  conversation_id: string;
+  text: string;
+}

@@ -22,7 +22,8 @@ export type RealtimeEventType =
   | "typing.start"
   | "typing.stop"
   | "presence.online"
-  | "presence.offline";
+  | "presence.offline"
+  | "ai.suggestion";
 
 export interface RealtimeEvent<P = Record<string, unknown>> {
   type: RealtimeEventType | "ping";
