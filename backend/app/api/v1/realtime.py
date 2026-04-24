@@ -138,10 +138,17 @@ async def realtime_ws(websocket: WebSocket) -> None:
     ]
     try:
         # First task to finish (disconnect, error, timeout) unwinds the rest.
-        _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for t in pending:
             t.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        # Retrieve exceptions from BOTH done and pending tasks to silence
+        # "Task exception was never retrieved" warnings. Disconnects here are
+        # normal lifecycle, not errors.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for t in done:
+            exc = t.exception()
+            if exc and not isinstance(exc, WebSocketDisconnect | asyncio.CancelledError):
+                logger.exception("Realtime WS task failed (user=%s)", user_id, exc_info=exc)
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001
