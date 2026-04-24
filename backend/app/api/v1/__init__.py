@@ -12,6 +12,7 @@ from app.api.v1 import (
     imports,
     messages,
     notifications,
+    realtime,
     settings,
     teams,
     templates,
@@ -39,3 +40,4 @@ router.include_router(billing.router, prefix="/billing", tags=["billing"])
 router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 router.include_router(settings.router, prefix="/settings", tags=["settings"])
 router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+router.include_router(realtime.router, tags=["realtime"])
