@@ -13,6 +13,7 @@ import {
   Megaphone,
   Bell,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ const NAV_MAIN: NavItem[] = [
 
 const NAV_GROWTH: NavItem[] = [
   { href: "/campaigns", label: "Кампании", icon: Megaphone },
+  { href: "/ai-agent", label: "AI-агент", icon: Sparkles },
 ];
 
 const NAV_SYSTEM: NavItem[] = [

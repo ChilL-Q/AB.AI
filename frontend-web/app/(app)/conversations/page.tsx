@@ -21,6 +21,7 @@ import {
   CheckCheck,
   Clock,
   AlertCircle,
+  Sparkles,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatTimeAgo } from "@/lib/formatters";
@@ -77,6 +78,9 @@ export default function ConversationsPage() {
   const [typingByConv, setTypingByConv] = useState<Record<string, { userId: string; expiresAt: number }>>({});
   // Set of user_ids currently online on this team (best-effort presence).
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  // Ephemeral AI-agent draft for the currently-open thread. Cleared on
+  // thread switch, on accept, and on dismiss.
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
 
   const conversationsQ = useQuery({
     queryKey: ["conversations", { search: debouncedSearch }],
@@ -184,6 +188,14 @@ export default function ConversationsPage() {
           next.delete(uid);
           return next;
         });
+      } else if (ev.type === "ai.suggestion" && ev.conversation_id) {
+        // Only surface if it's for the currently-open thread. The event is
+        // ephemeral — we don't try to hold suggestions for background threads.
+        if (ev.conversation_id !== selectedIdRef.current) return;
+        const text = (ev.payload as { text?: string } | undefined)?.text;
+        if (typeof text === "string" && text.length > 0) {
+          setAiSuggestion(text);
+        }
       }
     },
     [qc],
@@ -336,6 +348,8 @@ export default function ConversationsPage() {
   useEffect(() => {
     previousMessagesCountRef.current = 0;
     prependAnchorRef.current = null;
+    // Drop any stale AI draft; it's tied to the old conversation.
+    setAiSuggestion(null);
   }, [selectedId]);
 
   const sendMutation = useMutation({
@@ -376,6 +390,27 @@ export default function ConversationsPage() {
     selectedId && typingByConv[selectedId] && typingByConv[selectedId].userId !== myUserId
       ? typingByConv[selectedId]
       : null;
+
+  // Manual "ask AI" — operator can force a draft even in manual mode or
+  // to regenerate a stale one. The draft is also broadcast to teammates.
+  const askAiMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedId) return null;
+      const { data } = await api.post<{ conversation_id: string; text: string }>(
+        `/ai-agent/conversations/${selectedId}/suggest`,
+      );
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data?.text) setAiSuggestion(data.text);
+    },
+  });
+
+  const acceptAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    setDraft(aiSuggestion);
+    setAiSuggestion(null);
+  };
 
   return (
     <div className="h-[calc(100vh-6rem)] -mx-6 -my-6 flex border-t">
@@ -596,13 +631,66 @@ export default function ConversationsPage() {
             </div>
 
             <div className="border-t">
+              {aiSuggestion && (
+                <div className="px-4 pt-3">
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-primary mb-1.5">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      AI предлагает
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap break-words">
+                      {aiSuggestion}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={acceptAiSuggestion}
+                        className="h-7 text-xs"
+                      >
+                        Использовать
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setAiSuggestion(null)}
+                        className="h-7 text-xs"
+                      >
+                        Отклонить
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {sendError && (
                 <div className="px-4 pt-3 text-xs text-destructive flex items-center gap-2">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{sendError}</span>
                 </div>
               )}
+              {askAiMutation.isError && (
+                <div className="px-4 pt-3 text-xs text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    AI недоступен. Проверь ключ в настройках сервера.
+                  </span>
+                </div>
+              )}
               <form onSubmit={onSend} className="p-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => askAiMutation.mutate()}
+                  disabled={!selectedId || askAiMutation.isPending}
+                  title="Попросить AI сформулировать ответ"
+                >
+                  {askAiMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                </Button>
                 <Input
                   placeholder="Написать сообщение..."
                   value={draft}

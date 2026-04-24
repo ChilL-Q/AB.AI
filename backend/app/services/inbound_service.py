@@ -104,6 +104,21 @@ async def record_inbound_message(
             ts=now,
         )
     )
+
+    # Hand off to the AI-agent pipeline out-of-band. Imported lazily to
+    # avoid pulling Celery (and its broker connection) into request paths
+    # that don't need it, and to dodge a module-level import cycle via
+    # tasks → services → schemas.
+    from app.tasks.messages import handle_inbound_for_ai
+
+    try:
+        handle_inbound_for_ai.delay(str(conv.id), str(team.id))
+    except Exception:  # noqa: BLE001 — queue outage must never block the write
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "Failed to enqueue AI-agent task for conv=%s", conv.id
+        )
     return msg
 
 
