@@ -8,7 +8,6 @@ import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -34,31 +33,68 @@ export default function LoginPage() {
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>Вход в AB AI</CardTitle>
-        <CardDescription>Войдите в аккаунт, чтобы продолжить</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Пароль</Label>
-            <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Вход..." : "Войти"}
-          </Button>
-          <p className="text-sm text-muted-foreground text-center">
+    <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+        <div className="absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full bg-amber-500/5 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-[400px] h-[400px] rounded-full bg-amber-500/5 blur-3xl" />
+      </div>
+      <div className="w-full max-w-md px-4 relative">
+        <div className="text-center mb-8">
+          <span className="font-bold tracking-tight text-3xl leading-none">
+            <span className="text-primary">AB-</span>
+            <span className="text-muted-foreground">AI.kz</span>
+          </span>
+          <p className="text-sm text-muted-foreground mt-2">aqyldy business</p>
+        </div>
+        <div className="bg-card border border-border rounded-2xl shadow-lg p-8">
+          <h1 className="text-xl font-semibold text-center mb-1">С возвращением</h1>
+          <p className="text-sm text-muted-foreground text-center mb-6">Войдите в аккаунт, чтобы продолжить</p>
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="h-11"
+                placeholder="name@example.com"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Пароль</Label>
+              <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                Забыли пароль?
+              </Link>
+            </div>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="h-11"
+            />
+            {error && (
+              <div className="rounded-lg bg-destructive/10 text-destructive text-sm px-4 py-3">
+                {error}
+              </div>
+            )}
+            <Button type="submit" className="w-full h-11 brand-gradient font-semibold" disabled={loading}>
+              {loading ? "Входим..." : "Войти"}
+            </Button>
+          </form>
+          <p className="text-sm text-muted-foreground text-center mt-6">
             Нет аккаунта?{" "}
-            <Link href="/register" className="text-primary hover:underline">Зарегистрироваться</Link>
+            <Link href="/register" className="text-primary hover:underline font-medium">
+              Зарегистрироваться
+            </Link>
           </p>
-        </form>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </div>
   );
 }

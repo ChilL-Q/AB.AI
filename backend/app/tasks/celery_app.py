@@ -9,12 +9,14 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "app.tasks.messages",
-        "app.tasks.campaigns",
-        "app.tasks.sync",
+        "app.tasks.outreach",
         "app.tasks.reports",
-        "app.tasks.notifications",
+        "app.tasks.campaigns",
+        "app.tasks.feedback",
         "app.tasks.billing",
+        "app.tasks.sync",
         "app.tasks.maintenance",
+        "app.tasks.notifications",
     ],
 )
 
@@ -30,20 +32,24 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
-    "evaluate-triggers-every-15min": {
+    "run-outreach-cycle-every-hour": {
+        "task": "app.tasks.outreach.run_outreach_cycle",
+        "schedule": crontab(minute=0),
+    },
+    "check-escalations-every-hour": {
+        "task": "app.tasks.outreach.check_escalations",
+        "schedule": crontab(minute=30),
+    },
+    "evaluate-campaign-triggers": {
         "task": "app.tasks.campaigns.evaluate_triggers",
         "schedule": crontab(minute="*/15"),
     },
-    "update-segments-every-hour": {
-        "task": "app.tasks.maintenance.update_segments",
-        "schedule": crontab(minute=0),
+    "run-feedback-loop-every-6-hours": {
+        "task": "app.tasks.feedback.run_feedback_loop",
+        "schedule": crontab(minute=0, hour="*/6"),
     },
     "generate-weekly-reports": {
-        "task": "app.tasks.reports.generate_report",
+        "task": "app.tasks.reports.weekly_report",
         "schedule": crontab(hour=9, minute=0, day_of_week=1),
-    },
-    "cleanup-soft-deleted": {
-        "task": "app.tasks.maintenance.cleanup_soft_deleted",
-        "schedule": crontab(hour=3, minute=0),
     },
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Plus, Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Loader2, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDateShort, formatMoney, formatPhone } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ClientFormDialog } from "@/components/client-form-dialog";
+import { ImportDialog } from "@/components/import-dialog";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { Client, PaginatedResponse } from "@/types";
 
@@ -30,6 +31,7 @@ export default function ClientsPage() {
   const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["clients", { page, search: debouncedSearch }],
@@ -55,16 +57,19 @@ export default function ClientsPage() {
             {total > 0 ? `Всего ${total} клиентов` : "Управление базой клиентов"}
           </p>
         </div>
-        <Button onClick={() => setDialogOpen(true)}>
+        <Button onClick={() => setDialogOpen(true)} className="brand-gradient brand-gradient-text brand-shadow-sm rounded-xl">
           <Plus className="h-4 w-4 mr-2" />Добавить клиента
+        </Button>
+        <Button variant="outline" onClick={() => setImportOpen(true)} className="rounded-xl">
+          <Upload className="h-4 w-4 mr-2" />Импорт
         </Button>
       </div>
 
-      <Card>
+      <Card className="border-0 shadow-sm">
         <CardContent className="p-0">
           <div className="flex items-center gap-2 p-4 border-b">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Имя, телефон или email..."
                 value={search}
@@ -72,7 +77,7 @@ export default function ClientsPage() {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                className="pl-9"
+                className="pl-9 h-8 text-sm bg-muted/50 border-0 focus-visible:ring-1"
               />
             </div>
             {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -166,6 +171,7 @@ export default function ClientsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 p-0 rounded-lg"
                     disabled={page === 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
@@ -174,6 +180,7 @@ export default function ClientsPage() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 w-8 p-0 rounded-lg"
                     disabled={!hasNext}
                     onClick={() => setPage((p) => p + 1)}
                   >
@@ -190,6 +197,11 @@ export default function ClientsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onCreated={() => setPage(1)}
+      />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => setPage(1)}
       />
     </div>
   );

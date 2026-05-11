@@ -11,13 +11,16 @@ import {
   Phone,
   Mail,
   Calendar,
-  Car,
+  Car as CarIcon,
   MessageSquare,
   User as UserIcon,
   Loader2,
+  Plus,
+  Sparkles,
+  Ban,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { formatDateLong, formatMoney } from "@/lib/formatters";
+import { formatDateLong, formatDateShort, formatMoney } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +36,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ClientFormDialog } from "@/components/client-form-dialog";
+import { CarFormDialog } from "@/components/car-form-dialog";
+import { VisitFormDialog } from "@/components/visit-form-dialog";
 import { initialsOf } from "@/hooks/use-me";
-import type { Client } from "@/types";
+import type { Car, Client, PaginatedResponse, Visit } from "@/types";
 
 function errorStatus(err: unknown): number | null {
   const s = (err as { response?: { status?: number } }).response?.status;
@@ -47,12 +52,51 @@ export default function ClientDetailPage() {
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [carDialogOpen, setCarDialogOpen] = useState(false);
+  const [visitDialogOpen, setVisitDialogOpen] = useState(false);
+  const [outreachSent, setOutreachSent] = useState(false);
+
+  const outreachMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post("/ai-agent/outreach/trigger", { client_id: id });
+      return data;
+    },
+    onSuccess: () => {
+      setOutreachSent(true);
+      setTimeout(() => setOutreachSent(false), 3000);
+    },
+  });
 
   const { data: client, isLoading, error } = useQuery({
     queryKey: ["client", id],
     queryFn: async () => (await api.get<Client>(`/clients/${id}`)).data,
     enabled: !!id,
     retry: (failureCount, err) => errorStatus(err) !== 404 && failureCount < 2,
+  });
+
+  const { data: carsData } = useQuery({
+    queryKey: ["cars", id],
+    queryFn: async () => (await api.get<PaginatedResponse<Car>>(`/cars/client/${id}`)).data,
+    enabled: !!id,
+  });
+
+  const { data: visitsData } = useQuery({
+    queryKey: ["visits", id],
+    queryFn: async () => (await api.get<PaginatedResponse<Visit>>(`/visits?client_id=${id}`)).data,
+    enabled: !!id,
+  });
+
+  const cars = carsData?.data ?? [];
+  const visits = visitsData?.data ?? [];
+
+  const toggleDnc = useMutation({
+    mutationFn: async (dnc: boolean) => {
+      const { data } = await api.patch<Client>(`/clients/${id}`, { do_not_contact: dnc });
+      return data;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["client", id], data);
+    },
   });
 
   const del = useMutation({
@@ -98,7 +142,7 @@ export default function ClientDetailPage() {
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full bg-gradient-to-br from-primary to-violet-500 text-primary-foreground flex items-center justify-center text-xl font-semibold shrink-0">
+          <div className="h-16 w-16 rounded-full brand-gradient text-white flex items-center justify-center text-xl font-bold shrink-0">
             {initialsOf(client.full_name)}
           </div>
           <div>
@@ -113,9 +157,27 @@ export default function ClientDetailPage() {
                 ))}
               </div>
             )}
+            {client.do_not_contact && (
+              <Badge variant="outline" className="mt-1 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 border-red-300">
+                <Ban className="h-3 w-3 mr-1" />Не контактировать
+              </Badge>
+            )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button className="brand-gradient brand-gradient-text brand-shadow-sm" onClick={() => outreachMutation.mutate()} disabled={outreachMutation.isPending || outreachSent || client.do_not_contact}>
+            {outreachMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            {outreachSent ? "Отправлено!" : "Написать"}
+          </Button>
+          <Button
+            variant="outline"
+            className={client.do_not_contact ? "text-red-600 hover:text-red-700 border-red-300" : ""}
+            disabled={toggleDnc.isPending}
+            onClick={() => toggleDnc.mutate(!client.do_not_contact)}
+          >
+            <Ban className="h-4 w-4 mr-2" />
+            {client.do_not_contact ? "Разрешить контакт" : "Не контактировать"}
+          </Button>
           <Button variant="outline" onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4 mr-2" />Редактировать
           </Button>
@@ -159,7 +221,7 @@ export default function ClientDetailPage() {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview"><UserIcon className="h-4 w-4 mr-2" />Обзор</TabsTrigger>
-          <TabsTrigger value="cars"><Car className="h-4 w-4 mr-2" />Автомобили</TabsTrigger>
+          <TabsTrigger value="cars"><CarIcon className="h-4 w-4 mr-2" />Автомобили</TabsTrigger>
           <TabsTrigger value="visits"><Calendar className="h-4 w-4 mr-2" />Визиты</TabsTrigger>
           <TabsTrigger value="messages"><MessageSquare className="h-4 w-4 mr-2" />Сообщения</TabsTrigger>
         </TabsList>
@@ -211,17 +273,106 @@ export default function ClientDetailPage() {
         </TabsContent>
 
         <TabsContent value="cars">
-          <Card><CardContent className="py-12 text-center text-muted-foreground">Автомобили скоро появятся</CardContent></Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Автомобили</CardTitle>
+              <Button size="sm" onClick={() => setCarDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />Добавить
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {cars.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Нет автомобилей</p>
+              ) : (
+                <div className="divide-y">
+                  {cars.map((car) => (
+                    <div key={car.id} className="flex items-center justify-between py-3">
+                      <div>
+                        <div className="font-medium">
+                          {car.brand} {car.model}
+                          {car.year ? ` ${car.year}` : ""}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {car.license_plate && <span className="mr-3">{car.license_plate}</span>}
+                          {car.color && <span className="mr-3">{car.color}</span>}
+                          {car.mileage != null && <span>{car.mileage.toLocaleString("ru-RU")} км</span>}
+                        </div>
+                      </div>
+                      {car.last_service_at && (
+                        <div className="text-sm text-muted-foreground">
+                          Сервис: {formatDateShort(car.last_service_at)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="visits">
-          <Card><CardContent className="py-12 text-center text-muted-foreground">История визитов скоро появится</CardContent></Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>История визитов</CardTitle>
+              <Button size="sm" onClick={() => setVisitDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />Добавить
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {visits.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Нет визитов</p>
+              ) : (
+                <div className="divide-y">
+                  {visits.map((visit) => {
+                    const visitCar = cars.find((c) => c.id === visit.car_id);
+                    return (
+                      <div key={visit.id} className="py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium">{formatDateLong(visit.visited_at)}</div>
+                          <div className="font-semibold">{formatMoney(visit.total_amount)}</div>
+                        </div>
+                        {visitCar && (
+                          <div className="text-sm text-muted-foreground">
+                            {visitCar.brand} {visitCar.model}
+                          </div>
+                        )}
+                        {visit.services.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {visit.services.map((s, i) => (
+                              <Badge key={i} variant="outline">{s.name}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        {visit.notes && (
+                          <div className="mt-1 text-sm text-muted-foreground">{visit.notes}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="messages">
-          <Card><CardContent className="py-12 text-center text-muted-foreground">Диалоги по этому клиенту скоро появятся</CardContent></Card>
+          <Card><CardContent className="py-12 text-center text-muted-foreground">
+            <Link href="/conversations" className="text-primary hover:underline">Перейти к диалогам</Link>
+          </CardContent></Card>
         </TabsContent>
       </Tabs>
 
       <ClientFormDialog open={editOpen} onOpenChange={setEditOpen} client={client} />
+
+      <CarFormDialog open={carDialogOpen} onOpenChange={setCarDialogOpen} clientId={id as string} />
+
+      {client && (
+        <VisitFormDialog
+          open={visitDialogOpen}
+          onOpenChange={setVisitDialogOpen}
+          clientId={client.id}
+          cars={cars}
+        />
+      )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

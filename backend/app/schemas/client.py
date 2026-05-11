@@ -11,6 +11,7 @@ class ClientCreate(BaseModel):
     email: str | None = None
     birth_date: date | None = None
     tags: list[str] = []
+    do_not_contact: bool = False
 
 
 class ClientUpdate(BaseModel):
@@ -19,6 +20,7 @@ class ClientUpdate(BaseModel):
     email: str | None = None
     birth_date: date | None = None
     tags: list[str] | None = None
+    do_not_contact: bool | None = None
 
 
 class ClientOut(BaseModel):
@@ -32,6 +34,7 @@ class ClientOut(BaseModel):
     birth_date: date | None
     telegram_username: str | None
     whatsapp_opted_in: bool
+    do_not_contact: bool = False
     total_visits: int
     total_spent: Decimal
     last_visit_at: datetime | None

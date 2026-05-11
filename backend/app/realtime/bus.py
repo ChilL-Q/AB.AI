@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from uuid import UUID
@@ -38,17 +39,32 @@ def _team_channel(team_id: UUID) -> str:
 class EventBus:
     """Thin wrapper over redis.asyncio pub/sub.
 
-    Single shared publisher connection; subscribers get a dedicated PubSub
-    connection each (Redis requirement).
+    Creates a fresh publisher connection per publish call when running
+    inside Celery (where asyncio.run() creates a new loop each time).
+    For long-running uvicorn workers the connection is reused.
     """
 
     def __init__(self, url: str) -> None:
         self._url = url
         self._publisher: redis.Redis | None = None
+        self._publisher_loop_id: int | None = None
 
     async def _get_publisher(self) -> redis.Redis:
+        try:
+            current_loop = asyncio.get_running_loop()
+            loop_id = id(current_loop)
+        except RuntimeError:
+            loop_id = None
+
+        if self._publisher is not None and self._publisher_loop_id != loop_id:
+            with suppress(Exception):
+                await self._publisher.aclose()
+            self._publisher = None
+
         if self._publisher is None:
             self._publisher = redis.from_url(self._url, decode_responses=True)
+            self._publisher_loop_id = loop_id
+
         return self._publisher
 
     async def publish(self, event: RealtimeEvent) -> None:
@@ -97,8 +113,9 @@ class EventBus:
     async def close(self) -> None:
         if self._publisher is not None:
             with suppress(Exception):
-                await self._publisher.close()
+                await self._publisher.aclose()
             self._publisher = None
+            self._publisher_loop_id = None
 
 
 # Process-wide singleton. Uvicorn will construct one per worker, each with

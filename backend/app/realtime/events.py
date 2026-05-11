@@ -24,6 +24,10 @@ EventType = Literal[
     "typing.stop",
     "presence.online",
     "presence.offline",
+    # AI-agent drafted a reply in semi_auto mode. Payload carries
+    # `{ "text": str }`; the UI renders it as an inline suggestion chip
+    # the operator can accept or dismiss.
+    "ai.suggestion",
 ]
 
 

@@ -40,3 +40,9 @@ def decode_token(token: str) -> dict[str, Any]:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError:
         return {}
+
+
+def _create_token(payload: dict[str, Any], expires_minutes: int) -> str:
+    expire = datetime.now(UTC) + timedelta(minutes=expires_minutes)
+    payload = {**payload, "exp": expire}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.jwt_algorithm)
