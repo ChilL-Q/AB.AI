@@ -16,6 +16,10 @@ async def lifespan(app: FastAPI):
     if settings.sentry_dsn:
         sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.app_env)
     yield
+    from app.realtime.bus import shutdown_bus
+    from app.db.session import engine
+    await shutdown_bus()
+    await engine.dispose()
 
 
 app = FastAPI(
@@ -42,8 +46,10 @@ app.add_middleware(
 
 # Routers
 from app.api.v1 import router as api_v1_router  # noqa: E402
+from app.api.v1.webhooks import router as webhooks_router  # noqa: E402
 
 app.include_router(api_v1_router, prefix="/api/v1")
+app.include_router(webhooks_router, prefix="/webhooks")
 
 
 @app.get("/health")

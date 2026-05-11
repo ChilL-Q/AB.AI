@@ -7,7 +7,9 @@ from app.db.models.conversation import Conversation
 from app.db.models.import_log import ImportLog
 from app.db.models.message import Message
 from app.db.models.notification import Notification
+from app.db.models.outreach_attempt import OutreachAttempt
 from app.db.models.segment import Segment
+from app.db.models.service_interval import ServiceInterval
 from app.db.models.subscription import Subscription
 from app.db.models.team import Team
 from app.db.models.template import Template
@@ -24,7 +26,9 @@ __all__ = [
     "ImportLog",
     "Message",
     "Notification",
+    "OutreachAttempt",
     "Segment",
+    "ServiceInterval",
     "Subscription",
     "Team",
     "Template",

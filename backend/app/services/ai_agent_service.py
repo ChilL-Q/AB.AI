@@ -6,18 +6,21 @@ first read so the frontend never has to special-case 404 during onboarding.
 
 `generate_reply` pulls the last N messages of a conversation plus the
 client's card and the team's config, assembles a Russian-first system
-prompt, and delegates to Anthropic's Messages API. Failures are caught
-and surfaced as a domain error the caller can turn into a toast or
-silently skip — we never want AI flakiness to break the write path.
+prompt, and delegates to OpenAI's Chat Completions API. Failures are
+caught and surfaced as a domain error the caller can turn into a toast
+or silently skip — we never want AI flakiness to break the write path.
+
+We use `gpt-4o-mini` as the default: ~20x cheaper than Claude Sonnet,
+handles Russian well, and fast enough for conversational latency.
+Model is configurable via `settings.openai_model` without code changes.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from typing import cast
 
-from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +37,6 @@ logger = logging.getLogger(__name__)
 # Kept small to bound prompt cost; 20 messages is ~99% of in-session
 # context for a support conversation.
 REPLY_CONTEXT_MESSAGES = 20
-ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
 MAX_REPLY_TOKENS = 400
 
 
@@ -52,7 +54,8 @@ async def get_config(team_id: uuid.UUID, session: AsyncSession) -> AIAgentConfig
     if cfg is None:
         cfg = AIAgentConfig(
             team_id=team_id,
-            mode="semi_auto",
+            mode="auto",
+            is_active=True,
             tone="friendly",
             knowledge_base={},
             forbidden_topics=[],
@@ -105,7 +108,7 @@ def _build_system_prompt(cfg: AIAgentConfig, client: Client | None) -> str:
 
 
 def _render_history(messages: list[Message]) -> list[dict]:
-    """Map DB messages to Anthropic's `messages=[{role, content}]` format.
+    """Map DB messages to OpenAI's `messages=[{role, content}]` format.
 
     Inbound (from customer) → `user`; outbound (operator or AI) → `assistant`.
     Messages without text (pure media) are represented as a short stub so
@@ -127,8 +130,8 @@ async def generate_reply(
     Raises AIAgentError on any upstream failure (missing key, API error,
     blocked content). Never mutates the DB.
     """
-    if not settings.anthropic_api_key:
-        raise AIAgentError("ANTHROPIC_API_KEY is not configured")
+    if not settings.openai_api_key:
+        raise AIAgentError("OPENAI_API_KEY is not configured")
 
     conv = await session.scalar(
         select(Conversation).where(
@@ -153,33 +156,34 @@ async def generate_reply(
     history = list(rows)
     history.reverse()
 
-    # Anthropic requires the first user-role turn. If the thread starts
-    # with an assistant row (shouldn't normally happen, but defend anyway),
-    # drop leading assistant rows until a user turn is found.
+    # Defend against threads that start with an assistant row (shouldn't
+    # normally happen, but keep the model anchored on a user turn).
     while history and history[0].direction != "inbound":
         history.pop(0)
     if not history:
         raise AIAgentError("No inbound message to reply to")
 
     system_prompt = _build_system_prompt(cfg, client)
-    conv_messages = _render_history(history)
+    # OpenAI takes system as the first message, not a separate param.
+    conv_messages: list[dict] = [
+        {"role": "system", "content": system_prompt},
+        *_render_history(history),
+    ]
 
-    client_sdk = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client_sdk = AsyncOpenAI(api_key=settings.openai_api_key)
     try:
-        resp = await client_sdk.messages.create(
-            model=ANTHROPIC_MODEL,
+        resp = await client_sdk.chat.completions.create(
+            model=settings.openai_model,
             max_tokens=MAX_REPLY_TOKENS,
-            system=system_prompt,
             messages=conv_messages,  # type: ignore[arg-type]
         )
     except Exception as exc:  # noqa: BLE001 — wrap-and-raise a domain error
-        logger.exception("Anthropic API call failed (conv=%s)", conversation_id)
+        logger.exception("OpenAI API call failed (conv=%s)", conversation_id)
         raise AIAgentError(f"LLM call failed: {exc}") from exc
 
-    # The SDK returns a list of content blocks; we only care about the
-    # first text block (we never ask for tool use here).
-    for block in resp.content:
-        text = cast(str | None, getattr(block, "text", None))
-        if text:
-            return text.strip()
-    raise AIAgentError("LLM returned no text content")
+    if not resp.choices:
+        raise AIAgentError("LLM returned no choices")
+    text = resp.choices[0].message.content
+    if not text:
+        raise AIAgentError("LLM returned empty content")
+    return text.strip()

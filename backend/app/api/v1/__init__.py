@@ -13,12 +13,12 @@ from app.api.v1 import (
     messages,
     notifications,
     realtime,
+    service_intervals,
     settings,
     teams,
     templates,
     users,
     visits,
-    webhooks,
 )
 
 router = APIRouter()
@@ -39,5 +39,5 @@ router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 router.include_router(billing.router, prefix="/billing", tags=["billing"])
 router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 router.include_router(settings.router, prefix="/settings", tags=["settings"])
-router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+router.include_router(service_intervals.router, prefix="/service-intervals", tags=["service-intervals"])
 router.include_router(realtime.router, tags=["realtime"])

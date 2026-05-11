@@ -22,6 +22,8 @@ import {
   Clock,
   AlertCircle,
   Sparkles,
+  Bot,
+  UserCheck,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatTimeAgo } from "@/lib/formatters";
@@ -406,6 +408,16 @@ export default function ConversationsPage() {
     },
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { data } = await api.patch<Conversation>(`/conversations/${id}`, { status });
+      return data;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
+
   const acceptAiSuggestion = () => {
     if (!aiSuggestion) return;
     setDraft(aiSuggestion);
@@ -413,18 +425,18 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-6rem)] -mx-6 -my-6 flex border-t">
+    <div className="h-[calc(100vh-3.5rem)] -mx-6 -my-6 flex">
       {/* Left: conversations list */}
-      <aside className="w-80 border-r flex flex-col bg-card/50">
+      <aside className="w-80 border-r flex flex-col bg-card">
         <div className="p-4 border-b">
-          <h2 className="text-lg font-semibold mb-3">Диалоги</h2>
+          <h2 className="text-base font-semibold mb-3">Диалоги</h2>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Имя или телефон..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9"
+              className="pl-9 h-8 text-sm bg-muted/50 border-0 focus-visible:ring-1"
             />
           </div>
         </div>
@@ -445,15 +457,17 @@ export default function ConversationsPage() {
                 const name = c.client?.full_name ?? "Без имени";
                 return (
                   <li key={c.id}>
-                    <button
+                      <button
                       type="button"
                       onClick={() => setSelectedId(c.id)}
                       className={cn(
-                        "w-full text-left px-4 py-3 flex gap-3 border-b hover:bg-accent/50 transition-colors",
-                        active && "bg-accent",
+                        "w-full text-left px-4 py-3 flex gap-3 transition-colors",
+                        active
+                          ? "bg-primary/5 border-l-2 border-l-primary"
+                          : "border-b hover:bg-muted/50",
                       )}
                     >
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-primary to-violet-500 text-primary-foreground flex items-center justify-center text-sm font-semibold">
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center text-sm font-semibold">
                         {initialsOf(name)}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -483,7 +497,7 @@ export default function ConversationsPage() {
                             {c.last_message_preview ?? "—"}
                           </span>
                           {c.unread_count > 0 && !active && (
-                            <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold flex items-center justify-center">
+                            <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] font-semibold flex items-center justify-center">
                               {c.unread_count > 99 ? "99+" : c.unread_count}
                             </span>
                           )}
@@ -507,13 +521,13 @@ export default function ConversationsPage() {
           </div>
         ) : (
           <>
-            <header className="px-6 py-4 border-b flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary to-violet-500 text-primary-foreground flex items-center justify-center text-sm font-semibold">
+            <header className="px-5 py-3 border-b flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full brand-gradient text-white flex items-center justify-center text-xs font-bold shrink-0">
                 {initialsOf(selected.client?.full_name ?? "?")}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold truncate">{selected.client?.full_name ?? "Без имени"}</div>
-                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <div className="font-semibold text-sm truncate">{selected.client?.full_name ?? "Без имени"}</div>
+                <div className="text-[11px] text-muted-foreground flex items-center gap-2">
                   <span
                     className={cn(
                       "px-1.5 py-0.5 rounded font-medium uppercase tracking-wider text-[10px]",
@@ -539,10 +553,37 @@ export default function ConversationsPage() {
                   )}
                 </div>
               </div>
-              <div
-                className="ml-auto flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-                title={`WebSocket: ${wsStatus} · Операторов в сети: ${onlineUsers.size}`}
-              >
+                <div className="ml-auto flex items-center gap-2">
+                  {selected.status === "escalated" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 rounded-lg"
+                      onClick={() => updateStatusMutation.mutate({ id: selected.id, status: "active" })}
+                      disabled={updateStatusMutation.isPending}
+                      title="Вернуть AI-ассистента в диалог"
+                    >
+                      <Bot className="h-3.5 w-3.5" />
+                      Вернуть AI
+                    </Button>
+                  )}
+                  {selected.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs gap-1 rounded-lg border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950"
+                      onClick={() => updateStatusMutation.mutate({ id: selected.id, status: "escalated" })}
+                      disabled={updateStatusMutation.isPending}
+                      title="Перехватить диалог — AI перестанет отвечать"
+                    >
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Перехватить
+                    </Button>
+                  )}
+                  <div
+                    className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground"
+                    title={`WebSocket: ${wsStatus} · Операторов в сети: ${onlineUsers.size}`}
+                  >
                 <span
                   className={cn(
                     "h-2 w-2 rounded-full",
@@ -554,10 +595,11 @@ export default function ConversationsPage() {
                   )}
                 />
                 {wsStatus === "open" ? "онлайн" : wsStatus === "connecting" ? "подключение" : "офлайн"}
-              </div>
-            </header>
+                  </div>
+                </div>
+              </header>
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto">
+              <div ref={scrollRef} className="flex-1 overflow-y-auto">
               {messagesQ.isLoading ? (
                 <div className="py-12 flex justify-center">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -600,9 +642,9 @@ export default function ConversationsPage() {
                         <div className={cn("flex", out ? "justify-end" : "justify-start")}>
                           <div
                             className={cn(
-                              "max-w-[70%] rounded-2xl px-4 py-2 text-sm",
+                              "max-w-[70%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed",
                               out
-                                ? "bg-primary text-primary-foreground rounded-br-md"
+                                ? "brand-gradient brand-gradient-text rounded-br-md"
                                 : "bg-muted rounded-bl-md",
                             )}
                           >
@@ -633,8 +675,8 @@ export default function ConversationsPage() {
             <div className="border-t">
               {aiSuggestion && (
                 <div className="px-4 pt-3">
-                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
-                    <div className="flex items-center gap-2 text-xs font-medium text-primary mb-1.5">
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-primary mb-1.5">
                       <Sparkles className="h-3.5 w-3.5" />
                       AI предлагает
                     </div>
@@ -681,6 +723,7 @@ export default function ConversationsPage() {
                   type="button"
                   variant="outline"
                   size="icon"
+                  className="shrink-0 h-9 w-9 rounded-xl"
                   onClick={() => askAiMutation.mutate()}
                   disabled={!selectedId || askAiMutation.isPending}
                   title="Попросить AI сформулировать ответ"
@@ -696,11 +739,11 @@ export default function ConversationsPage() {
                   value={draft}
                   onChange={(e) => onDraftChange(e.target.value)}
                   disabled={sendMutation.isPending}
-                  className="flex-1"
+                  className="flex-1 h-9 text-sm bg-muted/50 border-0 focus-visible:ring-1"
                 />
-                <Button type="submit" disabled={!draft.trim() || sendMutation.isPending}>
+                <Button type="submit" disabled={!draft.trim() || sendMutation.isPending} className="h-9 w-9 rounded-xl brand-gradient brand-gradient-text shrink-0">
                   {sendMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4" />
                   ) : (
                     <Send className="h-4 w-4" />
                   )}
@@ -713,9 +756,9 @@ export default function ConversationsPage() {
 
       {/* Right: client sidebar */}
       {selected && selected.client && (
-        <aside className="w-72 border-l bg-card/50 hidden lg:flex flex-col">
-          <div className="p-6 text-center border-b">
-            <div className="h-16 w-16 mx-auto rounded-full bg-gradient-to-br from-primary to-violet-500 text-primary-foreground flex items-center justify-center text-xl font-semibold">
+        <aside className="w-72 border-l bg-card flex-col hidden lg:flex">
+          <div className="p-5 text-center border-b">
+            <div className="h-14 w-14 mx-auto rounded-full brand-gradient text-white flex items-center justify-center text-lg font-bold">
               {initialsOf(selected.client.full_name)}
             </div>
             <div className="mt-3 font-semibold">{selected.client.full_name}</div>

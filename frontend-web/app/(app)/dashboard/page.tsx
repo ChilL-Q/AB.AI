@@ -1,16 +1,20 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   Users,
   MessageSquare,
-  Car,
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
-  Phone,
+  Loader2,
+  Bot,
   CheckCircle2,
+  Phone,
   Clock,
+  UserPlus,
+  Wallet,
 } from "lucide-react";
 import {
   Area,
@@ -25,191 +29,224 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/hooks/use-me";
+import { formatMoney, formatTimeAgo } from "@/lib/formatters";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Stat = {
-  label: string;
-  value: string;
-  delta: number;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: "blue" | "violet" | "emerald" | "amber";
+interface DashboardData {
+  active_clients: number;
+  conversations_today: number;
+  total_cars: number;
+  retention_rate: number;
+  revenue_week: number;
+  revenue_delta: number;
+  outreach_returned: number;
+  outreach_total: number;
+  outreach_revenue: number;
+  chart: { d: string; revenue: number; visits: number }[];
+  activity: { type: string; title: string; meta: string; time: string }[];
+}
+
+const ACTIVITY_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  outreach: Bot,
+  visit: CheckCircle2,
+  client: UserPlus,
+  escalation: Phone,
 };
 
-const STATS: Stat[] = [
-  { label: "Активные клиенты", value: "1 284", delta: 12.4, icon: Users, tone: "blue" },
-  { label: "Диалоги сегодня", value: "87", delta: 3.2, icon: MessageSquare, tone: "violet" },
-  { label: "Автомобили в базе", value: "1 642", delta: 8.1, icon: Car, tone: "emerald" },
-  { label: "Возвратность 60д", value: "42%", delta: -1.8, icon: TrendingUp, tone: "amber" },
-];
-
-const TONE: Record<Stat["tone"], string> = {
-  blue: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  violet: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  amber: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-};
-
-const CHART = [
-  { d: "Пн", revenue: 240, visits: 18 },
-  { d: "Вт", revenue: 320, visits: 22 },
-  { d: "Ср", revenue: 280, visits: 20 },
-  { d: "Чт", revenue: 410, visits: 29 },
-  { d: "Пт", revenue: 520, visits: 34 },
-  { d: "Сб", revenue: 680, visits: 41 },
-  { d: "Вс", revenue: 390, visits: 25 },
-];
-
-const ACTIVITY = [
-  { icon: MessageSquare, tone: "violet" as const, title: "AI-агент ответил Марату К.", meta: "WhatsApp · 2 мин назад" },
-  { icon: CheckCircle2, tone: "emerald" as const, title: "Визит закрыт: Toyota Camry", meta: "Мастер — Саян · 12 мин назад" },
-  { icon: Phone, tone: "blue" as const, title: "Новый клиент: Айжан Д.", meta: "Источник: 2GIS · 34 мин назад" },
-  { icon: Clock, tone: "amber" as const, title: "Напоминание отправлено 18 клиентам", meta: "ТО через 30 дней · 1 ч назад" },
-];
-
-const TONE_SOFT: Record<"blue" | "violet" | "emerald" | "amber", string> = {
-  blue: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  violet: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  amber: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+const ACTIVITY_STYLE: Record<string, { bg: string; icon: string }> = {
+  outreach: { bg: "bg-amber-50 dark:bg-amber-500/10", icon: "text-amber-500" },
+  visit: { bg: "bg-emerald-50 dark:bg-emerald-500/10", icon: "text-emerald-500" },
+  client: { bg: "bg-sky-50 dark:bg-sky-500/10", icon: "text-sky-500" },
+  escalation: { bg: "bg-rose-50 dark:bg-rose-500/10", icon: "text-rose-500" },
 };
 
 export default function DashboardPage() {
   const { data: me } = useMe();
   const firstName = me?.full_name?.split(" ")[0] ?? "";
 
+  const { data: dash, isLoading } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => (await api.get<DashboardData>("/analytics/dashboard")).data,
+    enabled: !!me?.team_id,
+  });
+
+  const stats = [
+    { label: "Активные клиенты", value: dash?.active_clients, icon: Users, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-500/10" },
+    { label: "Диалоги сегодня", value: dash?.conversations_today, icon: MessageSquare, color: "text-sky-500", bg: "bg-sky-50 dark:bg-sky-500/10" },
+    { label: "Возвратность", value: dash ? `${Math.round(dash.retention_rate * 100)}%` : null, icon: TrendingUp, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-500/10" },
+    { label: "Выручка / нед", value: dash ? formatMoney(dash.revenue_week) : null, icon: Wallet, color: "text-violet-500", bg: "bg-violet-50 dark:bg-violet-500/10" },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-6 max-w-6xl">
+      {/* Greeting */}
+      <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">
+          <h2 className="text-2xl font-bold tracking-tight">
             Привет{firstName ? `, ${firstName}` : ""} 👋
           </h2>
-          <p className="text-muted-foreground">Вот как идут дела в автосервисе на этой неделе</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Вот как идут дела на этой неделе</p>
         </div>
-        <Button>
+        <Button className="brand-gradient brand-gradient-text brand-shadow-sm h-9 text-sm font-semibold rounded-xl">
           <Sparkles className="h-4 w-4 mr-2" />
           Запустить AI-кампанию
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {STATS.map(({ label, value, delta, icon: Icon, tone }) => {
-          const up = delta >= 0;
-          return (
-            <Card key={label} className="relative overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardDescription>{label}</CardDescription>
-                  <div className={cn("p-2 rounded-lg", TONE[tone])}>
-                    <Icon className="h-4 w-4" />
+      {isLoading ? (
+        <div className="py-20 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          {/* Stat cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {stats.map(({ label, value, icon: Icon, color, bg }) => (
+              <Card key={label} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", bg)}>
+                      <Icon className={cn("h-4 w-4", color)} />
+                    </div>
                   </div>
-                </div>
+                  <div className="text-2xl font-bold tracking-tight">{value ?? "—"}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{label}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* AI Outreach row */}
+          {dash && dash.outreach_total > 0 && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card className="border-0 shadow-sm overflow-hidden">
+                <div className="h-1 brand-gradient" />
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Bot className="h-4 w-4 text-primary" />
+                    <span className="text-xs font-semibold text-muted-foreground">AI обратился</span>
+                  </div>
+                  <div className="text-2xl font-bold">{dash.outreach_total}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Вернулись: <span className="text-emerald-600 dark:text-emerald-400 font-medium">{dash.outreach_returned}</span>
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Wallet className="h-4 w-4 text-emerald-500" />
+                    <span className="text-xs font-semibold text-muted-foreground">Выручка от AI</span>
+                  </div>
+                  <div className="text-2xl font-bold">{formatMoney(dash.outreach_revenue)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Визитов: {dash.outreach_returned}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="h-4 w-4 text-violet-500" />
+                    <span className="text-xs font-semibold text-muted-foreground">Выручка / нед</span>
+                  </div>
+                  <div className="text-2xl font-bold">{formatMoney(dash.revenue_week)}</div>
+                  {dash.revenue_delta !== 0 && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Badge variant={dash.revenue_delta >= 0 ? "success" : "destructive"} className="text-[10px] px-1.5 py-0">
+                        {dash.revenue_delta >= 0 ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                        {Math.abs(dash.revenue_delta).toFixed(1)}%
+                      </Badge>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Chart + Activity */}
+          <div className="grid gap-4 lg:grid-cols-5">
+            {/* Chart */}
+            <Card className="lg:col-span-3 border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Выручка за неделю</CardTitle>
+                <CardDescription className="text-xs">Динамика оборота</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold tracking-tight">{value}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge variant={up ? "success" : "destructive"}>
-                    {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                    {up ? "+" : ""}{delta.toFixed(1)}%
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">vs прошлая неделя</span>
+                <div className="h-[260px]">
+                  {(dash?.chart ?? []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={dash?.chart ?? []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.2} />
+                            <stop offset="100%" stopColor="#F59E0B" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="d" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}K`} />
+                        <Tooltip
+                          contentStyle={{
+                            background: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: 12,
+                            fontSize: 12,
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                          }}
+                          formatter={(value: number, name) => [
+                            name === "revenue" ? `${value}K ₸` : `${value} визитов`,
+                            name === "revenue" ? "Выручка" : "Визиты",
+                          ]}
+                        />
+                        <Area type="monotone" dataKey="revenue" stroke="#F59E0B" strokeWidth={2} fill="url(#rev)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      Данных за неделю пока нет
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Выручка за неделю</CardTitle>
-                <CardDescription>Динамика оборота и количество визитов</CardDescription>
-              </div>
-              <Badge variant="success">
-                <ArrowUpRight className="h-3 w-3" /> +18.2%
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={CHART} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                  <XAxis dataKey="d" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}K`} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                    labelStyle={{ color: "hsl(var(--foreground))" }}
-                    formatter={(value: number, name) => [
-                      name === "revenue" ? `${value}K ₸` : `${value} визитов`,
-                      name === "revenue" ? "Выручка" : "Визиты",
-                    ]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    fill="url(#rev)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Последние события</CardTitle>
-            <CardDescription>Автоматика и мастера</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {ACTIVITY.map(({ icon: Icon, tone, title, meta }, i) => (
-              <div key={i} className="flex gap-3">
-                <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center", TONE_SOFT[tone])}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{title}</p>
-                  <p className="text-xs text-muted-foreground">{meta}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      {!me?.team_id && (
-        <Card className="border-dashed bg-muted/30">
-          <CardContent className="py-6 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="font-medium">Демо-данные</p>
-                <p className="text-sm text-muted-foreground">
-                  Команда ещё не создана — на дашборде показаны примеры. Перейдите в Настройки, чтобы начать.
-                </p>
-              </div>
-            </div>
-            <Button variant="outline">Создать команду</Button>
-          </CardContent>
-        </Card>
+            {/* Activity feed */}
+            <Card className="lg:col-span-2 border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Последние события</CardTitle>
+                <CardDescription className="text-xs">AI-агент и автосервис</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {(dash?.activity ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-10">Событий пока нет</p>
+                ) : (
+                  <div className="space-y-3">
+                    {(dash?.activity ?? []).map((act, i) => {
+                      const Icon = ACTIVITY_ICON[act.type] ?? Clock;
+                      const style = ACTIVITY_STYLE[act.type] ?? { bg: "bg-muted", icon: "text-muted-foreground" };
+                      return (
+                        <div key={i} className="flex gap-3">
+                          <div className={cn("h-8 w-8 shrink-0 rounded-lg flex items-center justify-center", style.bg)}>
+                            <Icon className={cn("h-3.5 w-3.5", style.icon)} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate leading-tight">{act.title}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                              {act.meta}
+                              {act.time && ` · ${formatTimeAgo(act.time)}`}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
     </div>
   );

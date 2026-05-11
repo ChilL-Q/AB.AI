@@ -35,7 +35,7 @@ export interface RealtimeEvent<P = Record<string, unknown>> {
 }
 
 function wsUrl(): string | null {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8001/api/v1";
   try {
     const u = new URL(base);
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";

@@ -28,6 +28,7 @@ class AIAgentConfigOut(BaseModel):
     id: uuid.UUID
     team_id: uuid.UUID
     mode: AgentModeLiteral
+    is_active: bool = True
     personality: str | None = None
     tone: str
     knowledge_base: dict = Field(default_factory=dict)
@@ -39,6 +40,7 @@ class AIAgentConfigOut(BaseModel):
 
 class AIAgentConfigUpdate(BaseModel):
     mode: AgentModeLiteral | None = None
+    is_active: bool | None = None
     personality: str | None = Field(default=None, max_length=4000)
     tone: str | None = Field(default=None, max_length=200)
     knowledge_base: dict | None = None

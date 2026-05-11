@@ -56,7 +56,9 @@ async def create_client(team_id: uuid.UUID, data: ClientCreate, session: AsyncSe
     if existing:
         raise ConflictError("Client with this phone already exists")
 
-    client = Client(team_id=team_id, **data.model_dump(), phone=phone)
+    dump = data.model_dump()
+    dump["phone"] = phone
+    client = Client(team_id=team_id, **dump)
     session.add(client)
     await session.flush()
     return ClientOut.model_validate(client)

@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,10 +36,11 @@ class Client(Base, UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin):
     source: Mapped[str] = mapped_column(ClientSource, default="manual")
     tags: Mapped[list] = mapped_column(JSON, default=list)
     custom_fields: Mapped[dict] = mapped_column(JSONB, default=dict)
+    do_not_contact: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Unique per team
     __table_args__ = (
-        __import__("sqlalchemy").UniqueConstraint("team_id", "phone", name="uq_client_team_phone"),
+        UniqueConstraint("team_id", "phone", name="uq_client_team_phone"),
     )
 
     # Relationships
@@ -47,3 +48,4 @@ class Client(Base, UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin):
     cars: Mapped[list["Car"]] = relationship(back_populates="client")  # noqa: F821
     visits: Mapped[list["Visit"]] = relationship(back_populates="client")  # noqa: F821
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="client")  # noqa: F821
+    outreach_attempts: Mapped[list["OutreachAttempt"]] = relationship(back_populates="client")  # noqa: F821

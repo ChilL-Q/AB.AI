@@ -291,6 +291,7 @@ async def send_message(
     session: AsyncSession,
 ) -> MessageOut:
     conv = await _load_conversation(team_id, conversation_id, session)
+    client = conv.client
     now = datetime.now(UTC)
     msg = Message(
         conversation_id=conv.id,
@@ -316,6 +317,14 @@ async def send_message(
             ts=now,
         )
     )
+
+    try:
+        from app.services.channel_dispatcher import dispatch
+        await dispatch(client.phone, client.telegram_chat_id, conv.channel, data.text)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to dispatch outbound message")
+
     return out
 
 

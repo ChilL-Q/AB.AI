@@ -37,7 +37,7 @@ dependencies = [
     # Monitoring
     "sentry-sdk[fastapi]>=2.0.0",
     # AI
-    "anthropic>=0.40.0",
+    "openai>=1.54.0",
 ]
 
 [project.optional-dependencies]

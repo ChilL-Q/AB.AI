@@ -1,28 +1,32 @@
 "use client";
 
-/**
- * AI-agent configuration screen.
- *
- * A compact form over the team's single `AIAgentConfig` row. We commit on
- * explicit "Save" (not onChange) to avoid partial writes while the owner
- * is still tweaking the personality text.
- *
- * Modes:
- *   - manual:    AI never replies or suggests. Operator drives.
- *   - semi_auto: AI drafts a reply on every inbound; operator accepts/edits.
- *   - auto:      AI replies directly (sent_by="ai"). Safety net for off-hours.
- */
-
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Sparkles, Save, CheckCircle2 } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  Save,
+  CheckCircle2,
+  Power,
+  Activity,
+  Phone,
+  Check,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/api";
+import { formatMoney, formatDateShort } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { AIAgentConfig, AIAgentMode } from "@/types";
+import type {
+  AIAgentConfig,
+  AIAgentMode,
+  OutreachAction,
+  OutreachMetrics,
+} from "@/types";
 
 const MODE_OPTIONS: { value: AIAgentMode; title: string; description: string }[] = [
   {
@@ -44,6 +48,22 @@ const MODE_OPTIONS: { value: AIAgentMode; title: string; description: string }[]
   },
 ];
 
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  sent: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  replied: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+  escalated: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  failed: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Ожидает",
+  sent: "Отправлено",
+  replied: "Отвечено",
+  escalated: "Эскалация",
+  failed: "Ошибка",
+};
+
 export default function AIAgentPage() {
   const qc = useQueryClient();
   const configQ = useQuery({
@@ -51,23 +71,32 @@ export default function AIAgentPage() {
     queryFn: async () => (await api.get<AIAgentConfig>("/ai-agent/config")).data,
   });
 
+  const metricsQ = useQuery({
+    queryKey: ["outreach-metrics"],
+    queryFn: async () => (await api.get<OutreachMetrics>("/ai-agent/outreach/metrics")).data,
+  });
+
+  const actionsQ = useQuery({
+    queryKey: ["outreach-actions"],
+    queryFn: async () =>
+      (await api.get<OutreachAction[]>("/ai-agent/outreach")).data,
+  });
+
   const [mode, setMode] = useState<AIAgentMode>("semi_auto");
+  const [isActive, setIsActive] = useState(true);
   const [tone, setTone] = useState("friendly");
   const [personality, setPersonality] = useState("");
   const [forbiddenCsv, setForbiddenCsv] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  // Seed local form state once the config loads. We don't re-seed on every
-  // query refetch — that would clobber the user's in-progress edits.
   const configLoaded = !!configQ.data;
   useEffect(() => {
     if (!configQ.data) return;
     setMode(configQ.data.mode);
+    setIsActive(configQ.data.is_active ?? true);
     setTone(configQ.data.tone ?? "friendly");
     setPersonality(configQ.data.personality ?? "");
     setForbiddenCsv((configQ.data.forbidden_topics ?? []).join(", "));
-    // Only seed once — react-query will refetch on focus, but we treat
-    // the first successful fetch as the source-of-truth baseline.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configLoaded]);
 
@@ -75,18 +104,29 @@ export default function AIAgentPage() {
     mutationFn: async () => {
       const { data } = await api.patch<AIAgentConfig>("/ai-agent/config", {
         mode,
+        is_active: isActive,
         tone: tone.trim() || "friendly",
         personality: personality.trim() || null,
-        forbidden_topics: forbiddenCsv
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        forbidden_topics: forbiddenCsv.split(",").map((s) => s.trim()).filter(Boolean),
       });
       return data;
     },
     onSuccess: (data) => {
       qc.setQueryData(["ai-agent-config"], data);
       setSavedAt(Date.now());
+    },
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: async (active: boolean) => {
+      const { data } = await api.patch<AIAgentConfig>("/ai-agent/config", {
+        is_active: active,
+      });
+      return data;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(["ai-agent-config"], data);
+      setIsActive(data.is_active);
     },
   });
 
@@ -97,18 +137,60 @@ export default function AIAgentPage() {
       "Не удалось сохранить"
     : null;
 
+  const metrics = metricsQ.data;
+  const actions = actionsQ.data ?? [];
+
+  const approveMut = useMutation({
+    mutationFn: async ({ id, edited_message }: { id: string; edited_message?: string }) => {
+      return (await api.post<OutreachAction>(`/ai-agent/outreach/${id}/approve`, { edited_message })).data;
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["outreach-actions"] });
+      await qc.invalidateQueries({ queryKey: ["outreach-metrics"] });
+    },
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: async (id: string) => {
+      await api.post(`/ai-agent/outreach/${id}/reject`);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["outreach-actions"] });
+      await qc.invalidateQueries({ queryKey: ["outreach-metrics"] });
+    },
+  });
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-primary to-violet-500 text-primary-foreground flex items-center justify-center">
-          <Sparkles className="h-5 w-5" />
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl brand-gradient flex items-center justify-center shrink-0">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold">AI-агент</h1>
+            <p className="text-sm text-muted-foreground">
+              Настройки автоответчика и проактивного обращения к клиентам
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-semibold">AI-агент</h1>
-          <p className="text-sm text-muted-foreground">
-            Настройки автоответчика для входящих сообщений
-          </p>
-        </div>
+        <Button
+          variant={isActive ? "default" : "outline"}
+          onClick={() => toggleActive.mutate(!isActive)}
+          disabled={toggleActive.isPending}
+          className={cn(
+            isActive
+              ? "bg-emerald-600 hover:bg-emerald-700"
+              : "text-destructive hover:text-destructive",
+          )}
+        >
+          {toggleActive.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Power className="h-4 w-4 mr-2" />
+          )}
+          {isActive ? "AI работает" : "AI остановлен"}
+        </Button>
       </div>
 
       {configQ.isLoading ? (
@@ -182,9 +264,7 @@ export default function AIAgentPage() {
                   value={personality}
                   onChange={(e) => setPersonality(e.target.value)}
                   rows={4}
-                  placeholder={
-                    "Например: «Вежливый механик со стажем 20 лет. Не пересыпает техническими терминами, объясняет на пальцах.»"
-                  }
+                  placeholder="Например: «Вежливый механик со стажем 20 лет. Не пересыпает техническими терминами, объясняет на пальцах.»"
                   className="w-full px-3 py-2 rounded-md border bg-background text-sm resize-y min-h-[96px] focus:outline-none focus:ring-2 focus:ring-ring"
                   maxLength={4000}
                 />
@@ -221,6 +301,128 @@ export default function AIAgentPage() {
             )}
             {saveError && <span className="text-sm text-destructive">{saveError}</span>}
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Метрики AI Outreach
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {metrics ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Всего обращений
+                    </div>
+                    <div className="mt-1 text-2xl font-bold">{metrics.total_outreach}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Ответили
+                    </div>
+                    <div className="mt-1 text-2xl font-bold">
+                      {metrics.replied}{" "}
+                      <span className="text-sm text-muted-foreground">
+                        ({(metrics.reply_rate * 100).toFixed(0)}%)
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Вернулись на визит
+                    </div>
+                    <div className="mt-1 text-2xl font-bold">
+                      {metrics.resulted_in_visit}{" "}
+                      <span className="text-sm text-muted-foreground">
+                        ({(metrics.retention_rate * 100).toFixed(0)}%)
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Выручка от AI
+                    </div>
+                    <div className="mt-1 text-2xl font-bold">
+                      {formatMoney(metrics.total_revenue)}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">Загрузка метрик...</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Лента действий AI</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {actions.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  Пока нет действий AI
+                </p>
+              ) : (
+                <div className="divide-y">
+                  {actions.map((action) => (
+                    <div key={action.id} className="flex items-center justify-between py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{action.client_name}</span>
+                          <Badge
+                            variant="outline"
+                            className={STATUS_COLORS[action.status] ?? ""}
+                          >
+                            {STATUS_LABELS[action.status] ?? action.status}
+                          </Badge>
+                        </div>
+                        {action.message_text && (
+                          <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                            {action.message_text}
+                          </p>
+                        )}
+                        {action.status === "escalated" && (
+                          <div className="mt-1 flex items-center gap-1 text-sm text-amber-600 dark:text-amber-400">
+                            <Phone className="h-3 w-3" />
+                            Рекомендуется позвонить клиенту
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-4">
+                        {action.status === "pending" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
+                              disabled={approveMut.isPending}
+                              onClick={() => approveMut.mutate({ id: action.id })}
+                            >
+                              <Check className="h-3 w-3 mr-1" />Одобрить
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs text-destructive hover:text-destructive"
+                              disabled={rejectMut.isPending}
+                              onClick={() => rejectMut.mutate(action.id)}
+                            >
+                              <X className="h-3 w-3 mr-1" />Отклонить
+                            </Button>
+                          </>
+                        )}
+                        <div className="text-sm text-muted-foreground">
+                          {formatDateShort(action.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

@@ -32,6 +32,7 @@ export function ClientFormDialog({ open, onOpenChange, client, onCreated }: Prop
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [tags, setTags] = useState("");
+  const [doNotContact, setDoNotContact] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset fields only on the closed→open transition so in-flight user edits
@@ -47,6 +48,7 @@ export function ClientFormDialog({ open, onOpenChange, client, onCreated }: Prop
       setPhone(c?.phone ?? "");
       setEmail(c?.email ?? "");
       setTags((c?.tags ?? []).join(", "));
+      setDoNotContact(c?.do_not_contact ?? false);
       setError(null);
     }
     wasOpen.current = open;
@@ -59,6 +61,7 @@ export function ClientFormDialog({ open, onOpenChange, client, onCreated }: Prop
         phone,
         email: email || null,
         tags: [...new Set(tags.split(",").map((t) => t.trim()).filter(Boolean))],
+        do_not_contact: doNotContact,
       };
       if (isEdit && client) {
         const { data } = await api.patch<Client>(`/clients/${client.id}`, body);
@@ -128,6 +131,18 @@ export function ClientFormDialog({ open, onOpenChange, client, onCreated }: Prop
               value={tags}
               onChange={(e) => setTags(e.target.value)}
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="c-dnc"
+              type="checkbox"
+              checked={doNotContact}
+              onChange={(e) => setDoNotContact(e.target.checked)}
+              className="h-4 w-4 rounded border-border accent-primary"
+            />
+            <Label htmlFor="c-dnc" className="text-sm font-normal cursor-pointer">
+              Не контактировать (исключить из AI-рассылок)
+            </Label>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter className="gap-2">

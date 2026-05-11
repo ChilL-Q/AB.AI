@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Enum, ForeignKey, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,7 @@ class AIAgentConfig(Base, UUIDPrimaryKey, TimestampMixin):
     )
 
     mode: Mapped[str] = mapped_column(AgentMode, default="semi_auto")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     personality: Mapped[str | None] = mapped_column(Text, nullable=True)
     tone: Mapped[str] = mapped_column(Text, default="friendly")
     knowledge_base: Mapped[dict] = mapped_column(JSONB, default=dict)

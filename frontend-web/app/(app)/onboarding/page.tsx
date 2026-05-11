@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Car, Check, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Check, Loader2, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { slugify } from "@/lib/slug";
 import { useMe } from "@/hooks/use-me";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Team } from "@/types";
 
 const TIMEZONES = [
@@ -19,6 +19,12 @@ const TIMEZONES = [
   "Asia/Astana",
   "Asia/Bishkek",
   "Europe/Moscow",
+];
+
+const STEPS = [
+  { icon: "🔧", title: "Создайте автосервис", desc: "Название и настройки" },
+  { icon: "🤖", title: "AI-агент настроен", desc: "Автоматически" },
+  { icon: "🚀", title: "Начните работу", desc: "Клиенты и визиты" },
 ];
 
 export default function OnboardingPage() {
@@ -82,7 +88,7 @@ export default function OnboardingPage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <p className="text-sm text-destructive">
-          Не удалось загрузить профиль. Проверьте, что бэкенд запущен на :8000.
+          Не удалось загрузить профиль. Проверьте, что бэкенд запущен.
         </p>
       </div>
     );
@@ -91,23 +97,42 @@ export default function OnboardingPage() {
   if (me.team_id) return null;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pt-6">
-      <div className="text-center space-y-2">
-        <div className="mx-auto h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-          <Car className="h-7 w-7" />
+    <div className="min-h-[80vh] flex items-center justify-center px-4">
+      <div className="w-full max-w-lg">
+        {/* Logo + heading */}
+        <div className="text-center mb-8">
+          <div className="h-12 w-12 rounded-2xl brand-gradient flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <Sparkles className="h-6 w-6 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">Создаём ваш автосервис</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">
+            Одна команда — один автосервис. Пару минут — и можно начинать.
+          </p>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Создаём ваш автосервис</h1>
-        <p className="text-muted-foreground">
-          Одна команда — один автосервис. Пара минут и можно начинать работу.
-        </p>
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Данные автосервиса</CardTitle>
-          <CardDescription>Эти данные будут видны вашей команде</CardDescription>
-        </CardHeader>
-        <CardContent>
+        {/* Steps preview */}
+        <div className="flex items-center justify-center gap-6 mb-8">
+          {STEPS.map((step, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-2xl">{step.icon}</span>
+                <span className={cn(
+                  "text-[11px] font-medium",
+                  i === 0 ? "text-foreground" : "text-muted-foreground",
+                )}>
+                  {step.title}
+                </span>
+                <span className="text-[10px] text-muted-foreground/60">{step.desc}</span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className="w-8 h-px bg-border mt-[-20px]" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Form card */}
+        <div className="bg-card border border-border rounded-2xl shadow-lg p-6">
           <form onSubmit={onSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="name">Название автосервиса</Label>
@@ -118,13 +143,16 @@ export default function OnboardingPage() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 minLength={2}
+                className="h-11"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="slug">Уникальный идентификатор</Label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">ab.ai/</span>
+                <span className="text-sm text-muted-foreground shrink-0 bg-muted px-3 py-2.5 rounded-l-lg border border-r-0 border-input">
+                  ab-ai.kz/
+                </span>
                 <Input
                   id="slug"
                   placeholder="avto-master"
@@ -135,6 +163,7 @@ export default function OnboardingPage() {
                   }}
                   required
                   pattern="^[a-z0-9][-a-z0-9]*[a-z0-9]$"
+                  className="h-11 rounded-l-none"
                 />
               </div>
               <p className="text-xs text-muted-foreground">Используется в URL-адресах и интеграциях</p>
@@ -146,7 +175,7 @@ export default function OnboardingPage() {
                 id="tz"
                 value={tz}
                 onChange={(e) => setTz(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-11 w-full rounded-xl border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {TIMEZONES.map((z) => (
                   <option key={z} value={z}>{z}</option>
@@ -154,9 +183,17 @@ export default function OnboardingPage() {
               </select>
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && (
+              <div className="rounded-xl bg-destructive/10 text-destructive text-sm px-4 py-3">
+                {error}
+              </div>
+            )}
 
-            <Button type="submit" className="w-full" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              className="w-full h-11 brand-gradient brand-gradient-text brand-shadow-sm text-sm font-semibold rounded-xl"
+              disabled={mutation.isPending}
+            >
               {mutation.isPending ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Создаём...</>
               ) : (
@@ -164,8 +201,12 @@ export default function OnboardingPage() {
               )}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        <p className="text-center text-[11px] text-muted-foreground/50 mt-4">
+          AI-агент будет настроен автоматически после создания
+        </p>
+      </div>
     </div>
   );
 }
