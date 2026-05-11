@@ -80,15 +80,6 @@ async def send_template(phone: str, template_name: str, language: str = "ru", co
     return await send_message(phone, template_name)
 
 
-def verify_webhook(mode: str, token: str) -> bool:
-    """Twilio doesn't use a GET challenge like Meta.
-
-    This stub always returns False — Twilio webhook verification
-    is done via X-Twilio-Signature header instead.
-    """
-    return False
-
-
 def parse_inbound(form_data: dict) -> list[dict] | None:
     """Parse a Twilio WhatsApp inbound webhook (application/x-www-form-urlencoded).
 

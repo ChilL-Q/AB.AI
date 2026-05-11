@@ -1,7 +1,6 @@
 """Inbound webhooks for external messengers.
 
-WhatsApp:  GET  /webhooks/whatsapp  — Meta verification handshake
-           POST /webhooks/whatsapp  — Inbound messages from Meta Cloud API
+WhatsApp:  POST /webhooks/whatsapp  — Twilio inbound (form-urlencoded)
 Telegram:  POST /webhooks/telegram  — Inbound updates from Telegram Bot API
 Generic:   POST /webhooks/inbound   — Shared-secret endpoint for bridges/local QA
 """
@@ -12,7 +11,7 @@ import logging
 import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -34,38 +33,17 @@ class GenericInboundPayload(BaseModel):
     channel: Literal["whatsapp", "telegram", "sms"] = "whatsapp"
 
 
-# ─── WhatsApp ──────────────────────────────────────────────
-
-@router.get("/whatsapp")
-async def whatsapp_verify(
-    hub_mode: str = Query(alias="hub.mode"),
-    hub_challenge: str = Query(alias="hub.challenge"),
-    hub_verify_token: str = Query(alias="hub.verify_token"),
-):
-    """Meta/360dialog webhook verification (GET). Twilio doesn't use this."""
-    if whatsapp_bridge.verify_webhook(hub_mode, hub_verify_token):
-        return int(hub_challenge)
-    raise HTTPException(status_code=403, detail="Verification failed")
-
+# ─── WhatsApp (Twilio) ─────────────────────────────────────
 
 @router.post("/whatsapp", status_code=200)
 async def whatsapp_webhook(request: Request):
-    """WhatsApp inbound messages (POST).
+    """Twilio WhatsApp inbound messages (POST, form-urlencoded).
 
-    Handles both formats:
-    - Meta/360dialog Cloud API: JSON body
-    - Twilio: application/x-www-form-urlencoded
-    Returns 200 immediately.
+    Returns 200 immediately so Twilio doesn't retry.
     """
-    content_type = request.headers.get("content-type", "")
-
-    if "application/x-www-form-urlencoded" in content_type:
-        form = await request.form()
-        form_data = dict(form)
-        parsed = whatsapp_bridge.parse_inbound(form_data)
-    else:
-        body = await request.json()
-        parsed = whatsapp_bridge.parse_inbound(body)
+    form = await request.form()
+    form_data = dict(form)
+    parsed = whatsapp_bridge.parse_inbound(form_data)
     if not parsed:
         return {"status": "ok"}
 

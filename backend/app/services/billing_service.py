@@ -1,8 +1,12 @@
-"""Billing service — Stripe integration stub.
+"""Billing service — YooKassa + Kaspi integration for Kazakhstan.
 
-Current state: returns plan info, creates checkout sessions (requires real
-Stripe keys), and handles webhook events. Real Stripe calls are guarded behind
-self.stripe_client — when keys are empty, we return stub responses.
+Architecture: hybrid payments
+  - YooKassa: recurring auto-payments (tokenized card), also one-time links
+  - Kaspi Pay: one-time payment links (no recurring)
+  - Halyk Pay (reserved): one-time payment links
+
+Current state: all provider calls are stubs returning placeholders when
+keys are not configured. Real integration pending merchant account setup.
 """
 
 from __future__ import annotations
@@ -43,7 +47,7 @@ PLANS = {
             "Сервисные интервалы",
             "Метрики удержания",
         ],
-        "stripe_price_id": "price_pro_monthly",
+        "yookassa_price_id": "pro_monthly",
     },
     "business": {
         "name": "Business",
@@ -59,7 +63,7 @@ PLANS = {
             "API-интеграции",
             "Приоритетная поддержка",
         ],
-        "stripe_price_id": "price_business_monthly",
+        "yookassa_price_id": "business_monthly",
     },
 }
 
@@ -94,77 +98,156 @@ async def get_or_create_subscription(team_id: uuid.UUID, session: AsyncSession) 
 async def create_checkout_session(
     team_id: uuid.UUID,
     plan: str,
-    session: AsyncSession,
+    payment_method: str = "yookassa",
+    session: AsyncSession | None = None,
 ) -> dict:
+    """Create a payment checkout session.
+
+    payment_method: "yookassa" (recurring), "kaspi" (one-time link)
+    """
     if plan not in PLANS:
         raise ValueError(f"Unknown plan: {plan}")
 
     plan_info = PLANS[plan]
     if plan_info["price_monthly"] == 0:
-        sub = await get_or_create_subscription(team_id, session)
-        sub.plan = plan
-        sub.status = "active"
-        await session.flush()
+        if session:
+            sub = await get_or_create_subscription(team_id, session)
+            sub.plan = plan
+            sub.status = "active"
+            await session.flush()
         return {"url": None, "message": "Free plan activated"}
 
-    if not settings.stripe_secret_key:
-        logger.warning("Stripe not configured, returning stub checkout URL")
+    if payment_method == "yookassa":
+        return await _yookassa_checkout(team_id, plan, plan_info)
+    elif payment_method == "kaspi":
+        return await _kaspi_checkout(team_id, plan, plan_info)
+    else:
+        raise ValueError(f"Unknown payment method: {payment_method}")
+
+
+async def _yookassa_checkout(team_id: uuid.UUID, plan: str, plan_info: dict) -> dict:
+    """YooKassa checkout — supports recurring auto-payments."""
+    if not settings.yookassa_shop_id or not settings.yookassa_secret_key:
+        logger.warning("YooKassa not configured — returning stub checkout URL")
         return {
-            "url": f"https://billing.stub/checkout/{plan}?team={team_id}",
-            "message": "Stripe not configured — stub URL",
+            "url": f"https://yookassa.stub/checkout/{plan}?team={team_id}",
+            "message": "YooKassa not configured — stub URL",
+            "provider": "yookassa",
         }
 
-    import stripe
-    stripe.api_key = settings.stripe_secret_key
+    import httpx
 
-    checkout = stripe.checkout.Session.create(
-        mode="subscription",
-        line_items=[{"price": plan_info["stripe_price_id"], "quantity": 1}],
-        success_url=f"{settings.app_url}/settings?billing=success",
-        cancel_url=f"{settings.app_url}/settings?billing=cancel",
-        metadata={"team_id": str(team_id), "plan": plan},
-    )
-    return {"url": checkout.url}
+    url = "https://api.yookassa.ru/v3/payments"
+    idempotence_key = str(uuid.uuid4())
+    auth = (settings.yookassa_shop_id, settings.yookassa_secret_key)
+    payload = {
+        "amount": {
+            "value": str(plan_info["price_monthly"]),
+            "currency": "KZT",
+        },
+        "confirmation": {
+            "type": "redirect",
+            "return_url": f"{settings.app_url}/settings?billing=success",
+        },
+        "capture": True,
+        "description": f"AB-AI.kz {plan_info['name']} тариф",
+        "metadata": {
+            "team_id": str(team_id),
+            "plan": plan,
+        },
+        "save_payment_method": True,
+        "idempotence_key": idempotence_key,
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.post(url, auth=auth, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            confirmation_url = data.get("confirmation", {}).get("confirmation_url", "")
+            return {"url": confirmation_url, "payment_id": data.get("id"), "provider": "yookassa"}
+        except httpx.HTTPStatusError as exc:
+            logger.error("YooKassa API error: %s %s", exc.response.status_code, exc.response.text)
+            return {"url": None, "message": "YooKassa error"}
+        except Exception:
+            logger.exception("YooKassa checkout failed")
+            return {"url": None, "message": "YooKassa error"}
 
 
-async def handle_stripe_webhook(event_type: str, data: dict) -> None:
-    logger.info("Stripe webhook: %s", event_type)
+async def _kaspi_checkout(team_id: uuid.UUID, plan: str, plan_info: dict) -> dict:
+    """Kaspi Pay — one-time payment link (no recurring)."""
+    if not settings.kaspi_merchant_id or not settings.kaspi_api_key:
+        logger.warning("Kaspi not configured — returning stub checkout URL")
+        return {
+            "url": f"https://kaspi.stub/checkout/{plan}?team={team_id}",
+            "message": "Kaspi not configured — stub URL",
+            "provider": "kaspi",
+        }
+
+    # TODO: implement Kaspi Pay API when merchant account is ready
+    logger.warning("Kaspi Pay API not yet implemented — returning stub")
+    return {
+        "url": f"https://kaspi.stub/checkout/{plan}?team={team_id}",
+        "message": "Kaspi Pay integration pending merchant setup",
+        "provider": "kaspi",
+    }
+
+
+async def handle_yookassa_webhook(event_type: str, data: dict) -> None:
+    """Handle YooKassa webhook events."""
+    logger.info("YooKassa webhook: %s", event_type)
 
     from app.db.session import AsyncSessionFactory
     async with AsyncSessionFactory() as session:
-        if event_type == "checkout.session.completed":
-            team_id_str = data.get("metadata", {}).get("team_id")
-            plan = data.get("metadata", {}).get("plan", "start")
-            external_id = data.get("subscription")
+        if event_type == "payment.succeeded":
+            metadata = data.get("metadata", {})
+            team_id_str = metadata.get("team_id")
+            plan = metadata.get("plan", "start")
+            payment_method_id = data.get("payment_method", {}).get("id")
+            payment_id = data.get("id")
+
             if team_id_str:
                 team_id = uuid.UUID(team_id_str)
                 sub = await get_subscription(team_id, session)
                 if sub:
                     sub.plan = plan
                     sub.status = "active"
-                    sub.external_id = external_id
-                    sub.payment_provider = "stripe"
+                    sub.external_id = payment_id
+                    sub.payment_provider = "yookassa"
                     sub.current_period_start = datetime.now(UTC)
                     sub.current_period_end = datetime.now(UTC) + timedelta(days=30)
+                    if payment_method_id:
+                        sub.payment_method_saved = True  # type: ignore[attr-defined]
                     await session.commit()
 
-        elif event_type == "customer.subscription.updated":
+        elif event_type == "payment.canceled":
             external_id = data.get("id")
-            status = data.get("status")
             if external_id:
                 sub = await session.scalar(
                     select(Subscription).where(Subscription.external_id == external_id)
                 )
                 if sub:
-                    sub.status = status
+                    sub.status = "past_due"
                     await session.commit()
 
-        elif event_type == "customer.subscription.deleted":
-            external_id = data.get("id")
-            if external_id:
-                sub = await session.scalar(
-                    select(Subscription).where(Subscription.external_id == external_id)
-                )
+        elif event_type == "recurring.succeeded":
+            metadata = data.get("metadata", {})
+            team_id_str = metadata.get("team_id")
+            if team_id_str:
+                team_id = uuid.UUID(team_id_str)
+                sub = await get_subscription(team_id, session)
+                if sub:
+                    sub.status = "active"
+                    sub.current_period_start = datetime.now(UTC)
+                    sub.current_period_end = datetime.now(UTC) + timedelta(days=30)
+                    await session.commit()
+
+        elif event_type == "recurring.canceled":
+            metadata = data.get("metadata", {})
+            team_id_str = metadata.get("team_id")
+            if team_id_str:
+                team_id = uuid.UUID(team_id_str)
+                sub = await get_subscription(team_id, session)
                 if sub:
                     sub.status = "canceled"
                     sub.cancel_at_period_end = True

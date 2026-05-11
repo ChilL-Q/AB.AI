@@ -1,14 +1,14 @@
 """Billing / subscription endpoints.
 
-Stub status: plan listing + current subscription + checkout session creation
-work. Stripe webhook handler is wired up — needs real keys to process events.
+YooKassa for recurring payments (KZT), Kaspi Pay for one-time payments.
+Both return stub URLs when keys are not configured.
 """
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core.deps import CurrentUserDep, SessionDep
@@ -28,6 +28,7 @@ def _team_id(current_user) -> str:
 
 class CheckoutRequest(BaseModel):
     plan: str
+    payment_method: str = "yookassa"
 
 
 @router.get("/plans")
@@ -57,7 +58,7 @@ async def create_checkout(
     session: SessionDep,
 ):
     result = await billing_service.create_checkout_session(
-        _team_id(current_user), data.plan, session
+        _team_id(current_user), data.plan, data.payment_method, session
     )
     return result
 
@@ -68,15 +69,14 @@ async def cancel_subscription(current_user: CurrentUserDep, session: SessionDep)
     return {"status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/webhooks/stripe")
-async def stripe_webhook(request: Request):
-    body = await request.body()
-    logger.info("Stripe webhook received (%d bytes)", len(body))
+@router.post("/webhooks/yookassa")
+async def yookassa_webhook(request: Request):
+    """YooKassa payment webhooks."""
     try:
         payload = await request.json()
-        event_type = payload.get("type", "")
-        data = payload.get("data", {}).get("object", {})
-        await billing_service.handle_stripe_webhook(event_type, data)
+        event_type = payload.get("event", "")
+        data = payload.get("object", payload)
+        await billing_service.handle_yookassa_webhook(event_type, data)
     except Exception:
-        logger.exception("Failed to process Stripe webhook")
+        logger.exception("Failed to process YooKassa webhook")
     return {"status": "ok"}

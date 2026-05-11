@@ -30,18 +30,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
-    # WhatsApp
-    whatsapp_phone_number_id: str = ""
-    whatsapp_access_token: str = ""
-    whatsapp_verify_token: str = ""
-    whatsapp_360_api_key: str = ""
     # Shared secret for self-hosted inbound webhooks (bridges, tests).
     inbound_webhook_secret: str = ""
 
     # Telegram
     telegram_bot_token: str = ""
 
-    # SMS (Twilio)
+    # Twilio (SMS + WhatsApp)
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
@@ -61,8 +56,8 @@ class Settings(BaseSettings):
     s3_bucket: str = "ab-ai"
 
     # Billing
-    stripe_secret_key: str = ""
-    stripe_webhook_secret: str = ""
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
     kaspi_merchant_id: str = ""
     kaspi_api_key: str = ""
 
