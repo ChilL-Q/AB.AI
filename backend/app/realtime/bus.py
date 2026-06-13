@@ -24,6 +24,7 @@ from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
 import redis.asyncio as redis
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.realtime.events import RealtimeEvent
@@ -55,7 +56,7 @@ class EventBus:
         try:
             pub = await self._get_publisher()
             await pub.publish(_team_channel(event.team_id), event.model_dump_json())
-        except Exception:  # noqa: BLE001 — real-time is best-effort
+        except (redis.RedisError, OSError):
             logger.exception("Failed to publish realtime event (type=%s)", event.type)
 
     @asynccontextmanager
@@ -73,7 +74,7 @@ class EventBus:
             await pubsub.subscribe(_team_channel(team_id))
             yield self._iter_events(pubsub)
         finally:
-            with suppress(Exception):
+            with suppress(redis.RedisError, OSError):
                 await pubsub.unsubscribe(_team_channel(team_id))
             await pubsub.close()
             await sub_client.close()
@@ -90,13 +91,14 @@ class EventBus:
                 continue
             try:
                 yield RealtimeEvent.model_validate_json(data)
-            except Exception:  # noqa: BLE001 — skip malformed payloads
+            except (ValidationError, ValueError):
+                # ValidationError = schema mismatch; ValueError = JSON parse error
                 logger.exception("Failed to parse realtime event payload")
                 continue
 
     async def close(self) -> None:
         if self._publisher is not None:
-            with suppress(Exception):
+            with suppress(redis.RedisError, OSError):
                 await self._publisher.close()
             self._publisher = None
 

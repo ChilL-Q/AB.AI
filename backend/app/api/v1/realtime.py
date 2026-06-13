@@ -24,6 +24,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,12 +106,13 @@ async def realtime_ws(websocket: WebSocket) -> None:
             except TimeoutError:
                 # Client went silent past two heartbeat intervals — close.
                 raise WebSocketDisconnect(code=1001) from None
+            # Skip pong frames without full JSON parsing (browsers send raw strings).
+            if raw in ("pong", '{"type":"pong"}'):
+                continue
             try:
                 msg = RealtimeEvent.model_validate_json(raw)
-            except Exception:  # noqa: BLE001
-                # Allow simple pong frames that aren't full RealtimeEvents.
-                if raw == "pong" or "pong" in raw:
-                    continue
+            except (ValidationError, ValueError):
+                # ValidationError = schema mismatch; ValueError = JSON parse error
                 continue
             # Only typing events are client-initiated right now. Everything
             # else is server-authoritative.
@@ -162,5 +164,5 @@ async def realtime_ws(websocket: WebSocket) -> None:
                 ts=datetime.now(UTC),
             )
         )
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(WebSocketDisconnect, RuntimeError, OSError):
             await websocket.close()
