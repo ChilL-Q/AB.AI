@@ -18,7 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # Composite index for message list queries: conversation_id + direction + created_at DESC
-    # Improves performance of list_messages() operations when filtering by conversation and direction
+    # Improves performance of list_messages() when filtering by conversation and direction
     op.create_index(
         "ix_messages_conversation_direction_created",
         "messages",
