@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -39,6 +39,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Allow inline scripts for theme bootstrap; frontend is served from same origin
+    csp = "default-src 'self'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+    response.headers["Content-Security-Policy"] = csp
+    return response
+
 
 # Routers
 from app.api.v1 import router as api_v1_router  # noqa: E402
