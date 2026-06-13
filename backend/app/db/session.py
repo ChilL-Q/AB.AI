@@ -26,6 +26,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001 — must catch all: any route exception needs rollback
             await session.rollback()
             raise

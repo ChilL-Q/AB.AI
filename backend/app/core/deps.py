@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, TypeAlias
 from uuid import UUID
 
 from fastapi import Depends
@@ -44,5 +44,5 @@ async def get_current_user(
     return user
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
-CurrentUserDep = Annotated["User", Depends(get_current_user)]
+SessionDep: TypeAlias = Annotated[AsyncSession, Depends(get_session)]
+CurrentUserDep: TypeAlias = Annotated["User", Depends(get_current_user)]
