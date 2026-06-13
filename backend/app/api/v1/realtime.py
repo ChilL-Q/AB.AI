@@ -157,7 +157,7 @@ async def realtime_ws(websocket: WebSocket) -> None:
                 logger.exception("Realtime WS task failed (user=%s)", user_id, exc_info=exc)
     except WebSocketDisconnect:
         pass
-    except Exception:  # noqa: BLE001
+    except (TimeoutError, OSError, RuntimeError):  # noqa: BLE001 — safety net for unexpected WebSocket-layer errors
         logger.exception("Unexpected error in WS loop (user=%s)", user_id)
     finally:
         await bus.publish(
