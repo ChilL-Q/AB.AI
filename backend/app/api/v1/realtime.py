@@ -44,6 +44,8 @@ HEARTBEAT_INTERVAL_SECONDS = 25
 async def _resolve_user(token: str) -> User | None:
     """Decode the token and load the active user row. Returns None if any
     step fails — caller closes the socket."""
+    # decode_token() catches all JWTError (including expiry) and returns
+    # {} — empty dict indicates invalid token
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         return None
@@ -89,6 +91,8 @@ async def realtime_ws(websocket: WebSocket) -> None:
         )
     )
 
+    # Token is validated only at connect time; long-lived connections are not re-checked.
+    # Max exposure window = access_token_expire_minutes after the last connect.
     async def pump_from_bus() -> None:
         async with bus.subscribe(team_id) as events:
             async for event in events:
@@ -153,7 +157,7 @@ async def realtime_ws(websocket: WebSocket) -> None:
                 logger.exception("Realtime WS task failed (user=%s)", user_id, exc_info=exc)
     except WebSocketDisconnect:
         pass
-    except Exception:  # noqa: BLE001
+    except (TimeoutError, OSError, RuntimeError):  # noqa: BLE001 — safety net for unexpected WebSocket-layer errors
         logger.exception("Unexpected error in WS loop (user=%s)", user_id)
     finally:
         await bus.publish(
