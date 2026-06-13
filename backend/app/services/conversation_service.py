@@ -205,6 +205,8 @@ async def list_conversations_by_client(
     if not client:
         raise NotFoundError("Client not found")
 
+    # Returns all conversations for this client (no pagination).
+    # For pagination, follow list_conversations() pattern using PaginatedResponse.
     rows = (
         await session.scalars(
             select(Conversation)
