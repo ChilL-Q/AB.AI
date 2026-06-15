@@ -22,6 +22,7 @@ import contextlib
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
@@ -41,9 +42,12 @@ router = APIRouter()
 HEARTBEAT_INTERVAL_SECONDS = 25
 
 
-async def _resolve_user(token: str) -> User | None:
-    """Decode the token and load the active user row. Returns None if any
-    step fails — caller closes the socket."""
+async def _resolve_user(token: str) -> tuple[User, dict[str, Any]] | None:
+    """Decode the token and load the active user row. Returns (user, token_payload)
+    or None if any step fails — caller closes the socket.
+
+    The token_payload is used by token_expiry_guard to extract the 'exp' claim.
+    """
     # decode_token() catches all JWTError (including expiry) and returns
     # {} — empty dict indicates invalid token
     payload = decode_token(token)
@@ -60,7 +64,10 @@ async def _resolve_user(token: str) -> User | None:
         res = await session.execute(
             select(User).where(User.id == user_id, User.deleted_at.is_(None))
         )
-        return res.scalar_one_or_none()
+        user = res.scalar_one_or_none()
+        if user is None:
+            return None
+        return user, payload
     finally:
         await session_gen.aclose()
 
@@ -72,8 +79,12 @@ async def realtime_ws(websocket: WebSocket) -> None:
         await websocket.close(code=4401)
         return
 
-    user = await _resolve_user(token)
-    if user is None or user.team_id is None:
+    resolved = await _resolve_user(token)
+    if resolved is None:
+        await websocket.close(code=4403)
+        return
+    user, token_payload = resolved
+    if user.team_id is None:
         await websocket.close(code=4403)
         return
     team_id = user.team_id
@@ -91,8 +102,8 @@ async def realtime_ws(websocket: WebSocket) -> None:
         )
     )
 
-    # Token is validated only at connect time; long-lived connections are not re-checked.
-    # Max exposure window = access_token_expire_minutes after the last connect.
+    # Token is validated at connect-time; expiry is enforced by token_expiry_guard.
+    # Guard closes the socket at the exact moment the JWT 'exp' claim expires.
     async def pump_from_bus() -> None:
         async with bus.subscribe(team_id) as events:
             async for event in events:
@@ -137,10 +148,35 @@ async def realtime_ws(websocket: WebSocket) -> None:
             await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
             await websocket.send_text('{"type":"ping"}')
 
+    async def token_expiry_guard() -> None:
+        # Sleep until token's exp claim expires, then close with 4401.
+        # No polling — runs once, wakes up at exact expiry timestamp.
+        # If token lacks exp claim, this guard is a no-op.
+        exp_ts = token_payload.get("exp")
+        if exp_ts is None:
+            return
+        # Validate exp is numeric (jwt.decode doesn't enforce type)
+        if not isinstance(exp_ts, (int, float)):
+            logger.warning(
+                "Malformed JWT exp claim (user=%s): expected numeric, got %s",
+                user_id,
+                type(exp_ts).__name__,
+            )
+            with contextlib.suppress(RuntimeError, OSError):
+                await websocket.close(code=4401)
+            raise WebSocketDisconnect(code=4401)
+        sleep_seconds = exp_ts - datetime.now(UTC).timestamp()
+        if sleep_seconds > 0:
+            await asyncio.sleep(sleep_seconds)
+        with contextlib.suppress(RuntimeError, OSError):
+            await websocket.close(code=4401)
+        raise WebSocketDisconnect(code=4401)
+
     tasks = [
         asyncio.create_task(pump_from_bus()),
         asyncio.create_task(pump_from_client()),
         asyncio.create_task(heartbeat()),
+        asyncio.create_task(token_expiry_guard()),
     ]
     try:
         # First task to finish (disconnect, error, timeout) unwinds the rest.
