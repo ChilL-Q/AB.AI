@@ -25,7 +25,7 @@ async def _redis_available() -> bool:
         await r.ping()
         await r.close()
         return True
-    except Exception:  # noqa: BLE001
+    except (TimeoutError, OSError, redis.ConnectionError):  # noqa: BLE001 — catch network/timeout errors when Redis is unavailable
         return False
 
 
